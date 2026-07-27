@@ -1,0 +1,78 @@
+name: 构建多平台安装包
+
+on:
+  # 推送 tag（如 v0.2.0）时触发构建
+  push:
+    tags:
+      - 'v*'
+  # 也可在 Actions 页面手动触发
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: 构建 ${{ matrix.os }} 版本
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+            artifact_name: 宰执春秋-Setup-0.2.0.exe
+            artifact_path: build-out-v2/宰执春秋 Setup 0.2.0.exe
+          - os: macos-latest
+            platform: mac
+            artifact_name: 宰执春秋-0.2.0-mac
+            artifact_path: |
+              build-out-v2/*.dmg
+              build-out-v2/*.zip
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 构建前端
+        run: npm run build
+
+      - name: 打包 ${{ matrix.platform }} 应用
+        run: npx electron-builder --${{ matrix.platform }}
+        env:
+          # macOS 无签名构建
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+          retention-days: 30
+
+  # 创建 Release（可选：tag 触发时自动发布）
+  release:
+    name: 发布 Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 下载所有构建产物
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: 创建 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: artifacts/**/*

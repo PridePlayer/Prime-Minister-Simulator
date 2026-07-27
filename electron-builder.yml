@@ -1,0 +1,31 @@
+appId: com.elvania.prime-minister-simulator
+productName: 宰执春秋
+directories:
+  output: build-out-v2
+  buildResources: public
+files:
+  - dist/**/*
+  - dist-electron/**/*
+win:
+  target: nsis
+  icon: src/icon/icon.ico
+  signAndEditExecutable: false
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  installerIcon: src/icon/icon.ico
+  uninstallerIcon: src/icon/icon.ico
+  include: build/installer.nsh
+extraResources:
+  - from: src/icon/
+    to: icon/
+mac:
+  icon: src/icon/icon.icns
+  target:
+    - dmg
+    - zip
+  notarize: false
+  gatekeeperAssess: false
+  identity: null

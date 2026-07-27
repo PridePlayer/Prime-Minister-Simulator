@@ -1,0 +1,261 @@
+import type { EmergencyEvent } from '@/types/game'
+
+/** 紧急事件库 — 指标降到临界点时触发 */
+export const EMERGENCIES: EmergencyEvent[] = [
+  // ===== 民意崩溃 =====
+  {
+    id: 'emg_mass_protest',
+    title: '百万人走上街头',
+    category: '紧急',
+    description: '民意持续低迷，全国数十座城市爆发大规模抗议。示威者要求您立即辞职，否则将发动总停工。局势一触即发。',
+    trigger: { approval: 20 },
+    repeatable: true,
+    cooldown: 12,
+    options: [
+      {
+        id: 'a', label: '发表全国电视讲话，承认错误并承诺改革',
+        description: '放下身段，争取民心',
+        effects: { approval: 15, prestige: -8, stability: 4 },
+        newsTitle: '总理电视讲话道歉，承诺全面改革',
+        newsSummary: '民众反应不一，抗议规模暂时缩小。',
+        tone: 'neutral',
+      },
+      {
+        id: 'b', label: '调集力量恢复秩序',
+        description: '铁腕处置',
+        effects: { approval: -10, stability: -12, prestige: 4, treasury: -6 },
+        newsTitle: '执法部门强行清场，多地发生摩擦',
+        newsSummary: '街头恢复平静，但国际社会强烈谴责。',
+        tone: 'negative',
+      },
+      {
+        id: 'c', label: '宣布紧急状态，暂停部分公民权利',
+        description: '非常手段',
+        effects: { approval: -15, stability: 8, prestige: -6, diplomacy: -8 },
+        newsTitle: '全国进入紧急状态',
+        newsSummary: '街头恢复秩序，但自由受到限制。',
+        tone: 'negative',
+      },
+    ],
+  },
+  {
+    id: 'emg_no_confidence',
+    title: '议会不信任投票',
+    category: '紧急',
+    description: '反对党联合部分执政党叛离议员，在议会发起不信任投票。您必须在48小时内说服足够多的议员支持您，否则将被迫下台。',
+    trigger: { approval: 25 },
+    repeatable: true,
+    cooldown: 18,
+    options: [
+      {
+        id: 'a', label: '紧急斡旋，以政治交易换取支持',
+        description: '许以利益',
+        effects: { approval: 8, prestige: -6, treasury: -8, stability: 2 },
+        newsTitle: '总理惊险通过不信任投票',
+        newsSummary: '多笔政治交易达成，但代价高昂。',
+        tone: 'neutral',
+      },
+      {
+        id: 'b', label: '提请总统解散议会，提前大选',
+        description: '孤注一掷',
+        effects: { approval: 5, prestige: 8, stability: -10 },
+        newsTitle: '总理提请解散议会，提前大选',
+        newsSummary: '政治豪赌，结局未卜。',
+        tone: 'neutral',
+      },
+      {
+        id: 'c', label: '拒绝妥协，接受下台命运',
+        description: '体面退场',
+        effects: { approval: -5, prestige: -10 },
+        newsTitle: '总理接受不信任投票结果',
+        newsSummary: '政治生涯画上句号。',
+        tone: 'negative',
+      },
+    ],
+  },
+
+  // ===== 国库崩溃 =====
+  {
+    id: 'emg_bankruptcy',
+    title: '国家破产危机',
+    category: '紧急',
+    description: '国库即将见底，公务员薪资无法发放，国债收益率飙升。国际评级机构威胁将我国主权信用评级降至垃圾级。',
+    trigger: { treasury: 15 },
+    repeatable: true,
+    cooldown: 15,
+    options: [
+      {
+        id: 'a', label: '接受国际货币基金组织的严苛条件',
+        description: '外部救助',
+        effects: { treasury: 20, economy: -8, approval: -12, diplomacy: 6, prestige: -8 },
+        newsTitle: '政府接受国际救助方案',
+        newsSummary: '财政暂时缓解，但紧缩条件引发民怨。',
+        tone: 'negative',
+      },
+      {
+        id: 'b', label: '大规模印钞，以通胀换时间',
+        description: '饮鸩止渴',
+        effects: { treasury: 15, economy: -10, approval: -6, stability: -4 },
+        newsTitle: '央行启动量化宽松，大量印钞',
+        newsSummary: '财政压力缓解，但物价飞涨。',
+        tone: 'negative',
+      },
+      {
+        id: 'c', label: '紧急出售国有资产',
+        description: '断臂求生',
+        effects: { treasury: 18, economy: -6, approval: -8, prestige: -4 },
+        newsTitle: '政府紧急出售多项国有资产',
+        newsSummary: '国库暂时充盈，但战略资产流失。',
+        tone: 'negative',
+      },
+    ],
+  },
+
+  // ===== 经济崩溃 =====
+  {
+    id: 'emg_depression',
+    title: '大萧条降临',
+    category: '紧急',
+    description: '经济持续恶化，企业倒闭潮涌现，失业率突破20%。街头出现排队领取救济粮的长龙。社会秩序面临严峻考验。',
+    trigger: { economy: 15 },
+    repeatable: true,
+    cooldown: 15,
+    options: [
+      {
+        id: 'a', label: '推行新政：大规模公共工程+就业保障',
+        description: '以工代赈',
+        effects: { economy: 12, treasury: -15, approval: 10, stability: 6 },
+        newsTitle: '总理宣布大规模新政计划',
+        newsSummary: '百万就业岗位创建，民众重燃希望。',
+        tone: 'positive',
+      },
+      {
+        id: 'b', label: '实行价格管制与配给制度',
+        description: '战时经济模式',
+        effects: { economy: -4, treasury: -4, approval: -4, stability: 8 },
+        newsTitle: '政府实施全面价格管制',
+        newsSummary: '物价暂时稳定，但黑市泛滥。',
+        tone: 'negative',
+      },
+      {
+        id: 'c', label: '向大国求援，寻求经济援助',
+        description: '求助外部',
+        effects: { economy: 8, treasury: -4, diplomacy: -6, prestige: -10 },
+        newsTitle: '总理向大国寻求紧急经济援助',
+        newsSummary: '援助到位，但国家尊严受损。',
+        tone: 'neutral',
+      },
+    ],
+  },
+
+  // ===== 稳定崩溃 =====
+  {
+    id: 'emg_civil_unrest',
+    title: '内战阴云',
+    category: '紧急',
+    description: '多个地区宣布自治，地方武装与中央部队发生交火。国家面临分裂的危险。',
+    trigger: { stability: 12 },
+    repeatable: true,
+    cooldown: 20,
+    options: [
+      {
+        id: 'a', label: '全面军事处置，维护国家统一',
+        description: '铁血手段',
+        effects: { stability: -8, treasury: -12, approval: -10, prestige: 6 },
+        newsTitle: '政府军与地方武装全面交火',
+        newsSummary: '战火蔓延，国际社会呼吁停火。',
+        tone: 'negative',
+      },
+      {
+        id: 'b', label: '启动全国和解对话，给予自治权',
+        description: '政治解决',
+        effects: { stability: 10, approval: -4, prestige: -6, treasury: -4 },
+        newsTitle: '总理宣布启动全国和解进程',
+        newsSummary: '部分地区接受对话邀请，但激进派拒绝。',
+        tone: 'neutral',
+      },
+      {
+        id: 'c', label: '同意地方独立，避免全面战争',
+        description: '分裂国土',
+        effects: { stability: 15, approval: -20, prestige: -15, diplomacy: -4 },
+        newsTitle: '政府同意部分地区独立',
+        newsSummary: '国家版图改变，和平代价沉重。',
+        tone: 'negative',
+      },
+    ],
+  },
+
+  // ===== 外交崩溃 =====
+  {
+    id: 'emg_sanctions',
+    title: '全面国际制裁',
+    category: '紧急',
+    description: '因外交关系持续恶化，多个大国联合对我国实施全面经济制裁。进出口贸易骤降，外资大规模撤离。',
+    trigger: { diplomacy: 15 },
+    repeatable: true,
+    cooldown: 18,
+    options: [
+      {
+        id: 'a', label: '全面让步，接受国际条件解除制裁',
+        description: '低头求和',
+        effects: { diplomacy: 15, approval: -10, prestige: -12, economy: -4 },
+        newsTitle: '政府接受国际条件，制裁解除',
+        newsSummary: '经济制裁结束，但国家颜面尽失。',
+        tone: 'negative',
+      },
+      {
+        id: 'b', label: '寻找替代贸易伙伴，自力更生',
+        description: '另辟蹊径',
+        effects: { diplomacy: -4, economy: -6, approval: 4, prestige: 4 },
+        newsTitle: '总理宣布自力更生计划',
+        newsSummary: '转向新兴市场，但短期困难重重。',
+        tone: 'neutral',
+      },
+      {
+        id: 'c', label: '强硬对抗，指责制裁为霸权行径',
+        description: '正面硬刚',
+        effects: { diplomacy: -10, approval: 8, prestige: 6, economy: -10 },
+        newsTitle: '总理发表强硬反制裁演说',
+        newsSummary: '国内民众群情激昂，但经济压力加剧。',
+        tone: 'negative',
+      },
+    ],
+  },
+
+  // ===== 声望崩溃 =====
+  {
+    id: 'emg_media_crisis',
+    title: '舆论风暴',
+    category: '紧急',
+    description: '多家主流媒体联合发表社论要求您下台。社交媒体上不满当局情绪蔓延，您的支持率跌至谷底。',
+    trigger: { prestige: 15 },
+    repeatable: true,
+    cooldown: 12,
+    options: [
+      {
+        id: 'a', label: '召开新闻发布会，正面回应质疑',
+        description: '坦诚面对',
+        effects: { prestige: 8, approval: 4, stability: 2 },
+        newsTitle: '总理召开长时间新闻发布会',
+        newsSummary: '坦诚回答尖锐问题，部分挽回形象。',
+        tone: 'positive',
+      },
+      {
+        id: 'b', label: '加强媒体管理，引导舆论',
+        description: '管控口径',
+        effects: { prestige: -8, approval: -6, stability: -4, treasury: -2 },
+        newsTitle: '政府加强媒体管控',
+        newsSummary: '舆论暂时平息，但国际新闻自由组织强烈谴责。',
+        tone: 'negative',
+      },
+      {
+        id: 'c', label: '推出惠民政策包，用行动说话',
+        description: '以政绩服人',
+        effects: { prestige: 6, approval: 8, treasury: -10 },
+        newsTitle: '政府推出系列惠民举措',
+        newsSummary: '民众获得感提升，舆论风向转变。',
+        tone: 'positive',
+      },
+    ],
+  },
+]
