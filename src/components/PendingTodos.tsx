@@ -199,7 +199,7 @@ export default function PendingTodos() {
                           : 'border-gold/20 bg-ink-900/90 text-parchment-200/60 hover:bg-ink-800/95'
                       }`}
                       style={isHovered ? { borderColor: `${color}66` } : undefined}
-                      title={`${PAGE_ICON[item.page]} ${item.short} · ${item.detail} | 左键跳转 · 右键忽略（本回合）`}
+                      title={`${PAGE_ICON[item.page]} ${item.short} · ${item.detail} | 左键跳转 · 右键忽略（本月）`}
                     >
                       {/* 颜色圆点（脉冲，鼓励性项用空心圈） */}
                       {item.encouraging ? (

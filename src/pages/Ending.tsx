@@ -1,7 +1,6 @@
 import { motion } from 'motion/react'
 import { RotateCcw, Home } from 'lucide-react'
 import { useGameStore } from '@/store/gameStore'
-import { useSaveGame } from '@/hooks/useSaveGame'
 import { METRIC_META, metricColor } from '@/data/metrics'
 import { average } from '@/engine/metrics'
 import { gradeNarrative } from '@/engine/endings'
@@ -20,7 +19,6 @@ export default function Ending() {
   const state = useGameStore()
   const { pmName, countryName, term, turn, metrics, achievements, endingReason, endingGrade } = state
   const goTo = useGameStore((s) => s.goTo)
-  const { deleteSave } = useSaveGame()
 
   // 防御性检查：如果关键数据缺失，显示错误信息而非崩溃
   if (!metrics || !achievements) {
@@ -44,13 +42,13 @@ export default function Ending() {
   const legacy = generateLegacy(state)
   const unlocked = achievements.filter((a) => a.unlocked)
 
-  const handleRestart = async () => {
-    await deleteSave()
+  // 修复：此处不再调用 deleteSave。旧版 deleteSave 会删除"最新的手动存档"，
+  // 而快速存档几乎总是最新的手动档 → 玩家的快速存档在结算页被静默删掉
+  const handleRestart = () => {
     goTo('menu')
   }
 
-  const handleMenu = async () => {
-    await deleteSave()
+  const handleMenu = () => {
     goTo('menu')
   }
 

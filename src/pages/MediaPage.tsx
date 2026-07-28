@@ -220,7 +220,7 @@ export default function MediaPage() {
                 </div>
                 {onCooldown && (
                   <div className="mt-2 text-[10px] text-orange-400">
-                    冷却中: {cooldowns[action.id]} 回合
+                    冷却中: {cooldowns[action.id]} 个月
                   </div>
                 )}
               </motion.button>
@@ -281,7 +281,7 @@ export default function MediaPage() {
                 </div>
                 {onCooldown && (
                   <div className="mt-2 text-[10px] text-orange-400">
-                    冷却中: {cooldowns[action.id]} 回合
+                    冷却中: {cooldowns[action.id]} 个月
                   </div>
                 )}
               </motion.button>

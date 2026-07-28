@@ -131,6 +131,7 @@ function CountryDetailPanel({ country, atWar }: { country: ForeignCountry; atWar
   const pmStats = useGameStore((s) => s.pmStats)
   const metrics = useGameStore((s) => s.metrics)
   const turn = useGameStore((s) => s.turn)
+  const warHistory = useGameStore((s) => s.warHistory)
   const [confirming, setConfirming] = useState<string | null>(null)
 
   const color = RELATION_COLORS[country.relationLevel]
@@ -153,16 +154,17 @@ function CountryDetailPanel({ country, atWar }: { country: ForeignCountry; atWar
     if (action.treasuryCost && metrics.treasury < action.treasuryCost) {
       return { ok: false, reason: `国库不足（需 ${action.treasuryCost}）` }
     }
-    // v1.5 修复：lastActionTurn === 0 表示从未使用过，不应触发冷却判定
-    // 旧逻辑直接计算 cooldownLeft = cooldown - (turn - 0) = cooldown - turn，
-    // 导致 cooldown=999 的"每国一次"行动在从未使用时也显示"本局已使用"
-    if (country.lastActionTurn > 0) {
+    // 冷却判定（与 store 保持一致）：
+    //  - 冷却 ≥999 视为"每国限一次"行动（如宣战），用战争档案判定，
+    //    避免被其他行动共享的 lastActionTurn 误拦
+    //  - 其余行动：lastActionTurn === 0 表示从未使用，不触发冷却
+    if (action.cooldown >= 999) {
+      if (warHistory.some((w) => w.enemy === country.name)) {
+        return { ok: false, reason: '本局已使用（每国仅一次）' }
+      }
+    } else if (country.lastActionTurn > 0) {
       const cooldownLeft = action.cooldown - (turn - country.lastActionTurn)
       if (cooldownLeft > 0) {
-        // 冷却 ≥999 视为"每局限一次"行动（如宣战）
-        if (action.cooldown >= 999) {
-          return { ok: false, reason: '本局已使用（每国仅一次）' }
-        }
         return { ok: false, reason: `冷却中（剩 ${cooldownLeft} 月）` }
       }
     }

@@ -14,7 +14,7 @@ import HistoryChart from './HistoryChart'
  *  - 上半：6 项一级指标（民意/国库/经济/稳定/外交/声望）2 列网格
  *  - 下半：3 项宏观经济（GDP 总量 / 失业率 / 通胀指数）3 列网格
  *  - 顶部含折叠/展开按钮，默认收起，玩家点击展开查看
- *  - 数据来自 store.metricHistory（每月由 nextMonth 推送，最多保留 60 条记录，覆盖 48 个月任期）
+ *  - 数据来自 store.metricHistory（每月由 eventEngine.advanceMonth 月结算推送，最多保留 60 条记录，覆盖 48 个月任期）
  */
 export default function HistoryChartsPanel() {
   const metricHistory = useGameStore((s) => s.metricHistory)

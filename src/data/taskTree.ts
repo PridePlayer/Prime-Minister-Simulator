@@ -182,7 +182,7 @@ export const TASK_TREE: TaskNode[] = [
     id: 'task_pol_4',
     category: '政治',
     title: '长青总理',
-    description: '执政超过 100 个回合。',
+    description: '执政超过 100 个月。',
     requirements: { turn: 100 },
     prerequisiteTasks: [],
     rewards: {

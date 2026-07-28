@@ -868,7 +868,7 @@ export default function CabinetPage() {
 
                   {/* 现任加成 */}
                   <div className="signature-area mb-4">
-                    <div className="font-serif text-xs text-parchment-200/50 mb-1">现任加成（每回合）</div>
+                    <div className="font-serif text-xs text-parchment-200/50 mb-1">现任加成（每月）</div>
                     <BonusDisplay bonuses={reshuffleTarget.bonuses} loyalty={reshuffleTarget.loyalty} />
                   </div>
 

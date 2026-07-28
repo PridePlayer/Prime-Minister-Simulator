@@ -41,3 +41,5 @@ Desktop.ini
 .env
 .env.local
 .env.*.local
+
+/diagnosis.html

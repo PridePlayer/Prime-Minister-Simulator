@@ -585,7 +585,7 @@ function RequirementChip({ reqKey, value }: { reqKey: string; value: number }) {
     current = term
     satisfied = term >= value
   } else if (reqKey === 'turn') {
-    label = '回合'
+    label = '执政月数'
     current = turn
     satisfied = turn >= value
   } else {

@@ -389,9 +389,9 @@ function PolicyCard({
         </div>
       )}
 
-      {/* 每回合效果 */}
+      {/* 每月效果 */}
       <div className="mb-2">
-        <div className="font-mono text-[9px] text-parchment-200/40 mb-1">每回合效果</div>
+        <div className="font-mono text-[9px] text-parchment-200/40 mb-1">每月效果</div>
         <div className="flex flex-wrap items-center gap-1.5">
           {Object.entries(policy.perTurnEffects).map(([key, val]) => (
             <MetricEffectBadge

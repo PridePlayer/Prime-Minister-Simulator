@@ -2,716 +2,653 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>《宰执春秋》可玩性深度诊断报告 v1.5</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>《宰执春秋》为什么不好玩 · 深度病理诊断报告</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0c0a08;
+    --panel: #171310;
+    --panel2: #1e1813;
+    --line: rgba(200,170,120,0.14);
+    --gold: #d9a94e;
+    --gold-dim: #a8875a;
+    --text: #d8c9ae;
+    --muted: #8d7d64;
+    --red: #e5484d;
+    --red-dim: #b03a3e;
+    --green: #46a758;
+    --orange: #e8853b;
+    --blue: #5b9bd5;
+  }
+  html { scroll-behavior: smooth; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
-    background: linear-gradient(135deg, #0f0a08 0%, #1c1410 50%, #0a0606 100%);
-    color: #e8d8b8;
-    line-height: 1.6;
-    padding: 40px 20px;
+    font-family: "PingFang SC", "Microsoft YaHei", -apple-system, sans-serif;
+    background:
+      radial-gradient(1200px 500px at 50% -100px, rgba(217,169,78,0.07), transparent),
+      radial-gradient(900px 400px at 90% 30%, rgba(229,72,77,0.04), transparent),
+      var(--bg);
+    color: var(--text);
+    line-height: 1.75;
+    padding: 48px 20px 80px;
     min-height: 100vh;
   }
-  .container { max-width: 1100px; margin: 0 auto; }
+  .container { max-width: 1080px; margin: 0 auto; }
+  code, .mono { font-family: "Cascadia Code", Consolas, monospace; }
+
+  /* ===== Header ===== */
   .header {
     text-align: center;
-    padding: 40px 20px;
-    background: linear-gradient(135deg, rgba(245,158,11,0.12), rgba(139,69,19,0.08));
-    border: 1px solid rgba(245,158,11,0.4);
+    padding: 48px 24px 40px;
+    background: linear-gradient(160deg, rgba(229,72,77,0.08), rgba(217,169,78,0.05) 60%, transparent);
+    border: 1px solid rgba(229,72,77,0.3);
+    border-radius: 14px;
+    margin-bottom: 14px;
+    position: relative;
+    overflow: hidden;
+  }
+  .header::before {
+    content: "病理报告";
+    position: absolute;
+    top: 26px; right: -38px;
+    transform: rotate(35deg);
+    background: var(--red);
+    color: #fff;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 6px;
+    padding: 5px 48px;
+    opacity: 0.9;
+  }
+  .header h1 { font-size: 34px; color: var(--gold); letter-spacing: 10px; font-weight: 700; }
+  .header .sub { margin-top: 10px; font-size: 15px; color: var(--text); }
+  .header .sub strong { color: var(--red); }
+  .header .meta { margin-top: 14px; font-size: 11px; color: var(--muted); font-family: monospace; }
+
+  /* score strip */
+  .score-strip {
+    display: flex; gap: 14px; justify-content: center; flex-wrap: wrap;
+    margin: 14px 0 34px;
+  }
+  .score-box {
+    background: var(--panel);
+    border: 1px solid var(--line);
     border-radius: 12px;
-    margin-bottom: 30px;
+    padding: 18px 26px;
+    text-align: center;
+    min-width: 200px;
   }
-  .header h1 {
-    font-size: 32px;
-    color: #fbbf24;
-    letter-spacing: 8px;
-    margin-bottom: 8px;
-    font-weight: 700;
-  }
-  .header .subtitle { color: #a89780; font-size: 14px; }
-  .header .meta { margin-top: 12px; font-size: 11px; color: #7a6b58; font-family: monospace; }
-  .header .score-jump {
-    margin-top: 14px;
-    display: inline-flex;
-    align-items: center;
-    gap: 12px;
-    font-family: monospace;
-    font-size: 13px;
-  }
-  .score-old { color: #f87171; text-decoration: line-through; opacity: 0.7; }
-  .score-arrow { color: #a89780; }
-  .score-new {
-    color: #4ade80;
-    font-weight: bold;
-    padding: 4px 14px;
-    background: rgba(34,197,94,0.15);
-    border-radius: 20px;
-  }
+  .score-box .lbl { font-size: 12px; color: var(--muted); letter-spacing: 2px; }
+  .score-box .val { font-size: 40px; font-weight: 800; font-family: monospace; margin-top: 4px; }
+  .score-box .note { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .val.fake { color: var(--gold-dim); text-decoration: line-through; opacity: 0.75; }
+  .val.real { color: var(--red); }
+  .val.gap { color: var(--orange); }
 
-  .summary-card {
-    background: rgba(28,20,16,0.6);
-    border-left: 4px solid #4ade80;
-    padding: 20px 24px;
-    border-radius: 8px;
-    margin-bottom: 30px;
+  /* ===== TL;DR ===== */
+  .tldr {
+    background: linear-gradient(135deg, rgba(229,72,77,0.1), rgba(229,72,77,0.03));
+    border-left: 4px solid var(--red);
+    border-radius: 10px;
+    padding: 26px 30px;
+    margin-bottom: 40px;
   }
-  .summary-card h2 { color: #4ade80; font-size: 18px; margin-bottom: 10px; }
-  .summary-card p { color: #c8b896; font-size: 14px; }
-  .summary-card .score {
-    display: inline-block;
-    padding: 4px 12px;
-    background: rgba(34,197,94,0.2);
-    color: #4ade80;
-    border-radius: 20px;
-    font-weight: bold;
-    margin-left: 8px;
+  .tldr h2 { color: var(--red); font-size: 19px; margin-bottom: 12px; letter-spacing: 2px; }
+  .tldr p { font-size: 14.5px; margin-bottom: 10px; }
+  .tldr .one-liner {
+    font-size: 17px; color: #f0e2c4; font-weight: 700;
+    padding: 14px 18px; background: rgba(0,0,0,0.35);
+    border-radius: 8px; margin: 14px 0; line-height: 1.7;
   }
+  .tldr .one-liner em { color: var(--red); font-style: normal; }
 
-  .section { margin-bottom: 30px; }
-  .section-title {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 16px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid rgba(245,158,11,0.2);
+  /* ===== Section ===== */
+  .section { margin-bottom: 46px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 16px; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+  .sec-head .num {
+    font-family: monospace; font-size: 26px; font-weight: 800; color: var(--red);
+    background: rgba(229,72,77,0.12); border: 1px solid rgba(229,72,77,0.35);
+    border-radius: 10px; padding: 2px 14px; flex-shrink: 0;
   }
-  .section-title .num {
-    width: 32px; height: 32px;
-    display: flex; align-items: center; justify-content: center;
-    background: linear-gradient(135deg, #fbbf24, #d97706);
-    color: #1c1410;
-    border-radius: 50%;
-    font-weight: bold;
-    font-size: 14px;
+  .sec-head h2 { font-size: 21px; color: #eadfc4; letter-spacing: 1px; }
+  .sec-head .sev {
+    margin-left: auto; flex-shrink: 0;
+    font-size: 11px; font-weight: bold; padding: 4px 12px; border-radius: 999px; letter-spacing: 2px;
   }
-  .section-title h2 { color: #fbbf24; font-size: 20px; }
-  .section-title .severity {
-    margin-left: auto;
-    padding: 2px 10px;
-    border-radius: 12px;
-    font-size: 11px;
-    font-weight: bold;
-  }
-  .severity.critical { background: rgba(239,68,68,0.2); color: #f87171; }
-  .severity.high { background: rgba(251,146,60,0.2); color: #fb923c; }
-  .severity.medium { background: rgba(245,158,11,0.2); color: #fbbf24; }
-  .severity.fixed { background: rgba(34,197,94,0.2); color: #4ade80; }
-  .severity.resolved { background: rgba(34,197,94,0.25); color: #4ade80; border: 1px solid rgba(34,197,94,0.4); }
-
-  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-  @media (max-width: 768px) {
-    .grid-2, .grid-3 { grid-template-columns: 1fr; }
-  }
+  .sev.s0 { background: rgba(229,72,77,0.18); color: #ff8a8e; border: 1px solid rgba(229,72,77,0.4); }
+  .sev.s1 { background: rgba(232,133,59,0.15); color: var(--orange); border: 1px solid rgba(232,133,59,0.4); }
+  .sev.s2 { background: rgba(217,169,78,0.13); color: var(--gold); border: 1px solid rgba(217,169,78,0.35); }
 
   .card {
-    background: rgba(28,20,16,0.5);
-    border: 1px solid rgba(168,151,128,0.15);
-    border-radius: 8px;
-    padding: 16px;
-    transition: border-color 0.2s;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 22px 26px;
+    margin-bottom: 14px;
   }
-  .card:hover { border-color: rgba(245,158,11,0.4); }
-  .card h3 { color: #fbbf24; font-size: 14px; margin-bottom: 8px; }
-  .card .label { color: #a89780; font-size: 12px; }
-  .card .desc { color: #c8b896; font-size: 13px; margin: 6px 0; }
-  .card .impact {
-    margin-top: 10px;
-    padding: 8px 10px;
-    background: rgba(239,68,68,0.08);
-    border-left: 3px solid #f87171;
-    border-radius: 4px;
-    font-size: 12px;
-    color: #f87171;
-  }
-  .card .fix {
-    margin-top: 8px;
-    padding: 8px 10px;
-    background: rgba(34,197,94,0.08);
-    border-left: 3px solid #4ade80;
-    border-radius: 4px;
-    font-size: 12px;
-    color: #4ade80;
-  }
+  .card h3 { color: var(--gold); font-size: 15px; margin-bottom: 10px; letter-spacing: 1px; }
+  .card p { font-size: 13.5px; color: var(--text); margin-bottom: 8px; }
+  .card p strong { color: #f0e2c4; }
+  .card .hl-red { color: #ff8a8e; font-weight: 700; }
+  .card .hl-gold { color: var(--gold); font-weight: 700; }
 
-  .stat-bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 8px 0;
+  .evidence {
+    background: rgba(0,0,0,0.35);
+    border: 1px dashed rgba(200,170,120,0.25);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin: 10px 0;
+    font-size: 12px;
+    color: var(--muted);
+    font-family: "Cascadia Code", Consolas, monospace;
+    line-height: 1.9;
   }
-  .stat-bar .label { width: 160px; font-size: 12px; color: #a89780; }
-  .stat-bar .bar-bg {
-    flex: 1;
-    height: 8px;
-    background: rgba(0,0,0,0.4);
-    border-radius: 4px;
-    overflow: hidden;
+  .evidence .file { color: var(--blue); }
+  .evidence .k { color: var(--gold); }
+  .evidence .bad { color: #ff8a8e; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+
+  /* ===== bars ===== */
+  .bar-row { display: flex; align-items: center; gap: 12px; margin: 7px 0; }
+  .bar-row .bl { width: 168px; font-size: 12px; color: var(--muted); text-align: right; flex-shrink: 0; }
+  .bar-row .bt { flex: 1; height: 18px; background: rgba(255,255,255,0.04); border-radius: 4px; overflow: hidden; position: relative; }
+  .bar-row .bf { height: 100%; border-radius: 4px; display: flex; align-items: center; }
+  .bar-row .bv { width: 120px; font-size: 11.5px; font-family: monospace; flex-shrink: 0; }
+  .bf.red { background: linear-gradient(90deg, var(--red-dim), var(--red)); }
+  .bf.orange { background: linear-gradient(90deg, #a55b23, var(--orange)); }
+  .bf.gold { background: linear-gradient(90deg, #937031, var(--gold)); }
+  .bf.green { background: linear-gradient(90deg, #2f7a3e, var(--green)); }
+  .bf.gray { background: #4a4237; }
+  .bv.red { color: #ff8a8e; } .bv.gold { color: var(--gold); } .bv.green { color: var(--green); } .bv.gray { color: var(--muted); }
+
+  /* ===== timeline (35-day cycle) ===== */
+  .day-strip { display: flex; gap: 3px; margin: 14px 0 6px; flex-wrap: wrap; }
+  .day {
+    width: 22px; height: 30px; border-radius: 4px;
+    background: rgba(255,255,255,0.045);
+    border: 1px solid rgba(255,255,255,0.05);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; color: #574c3c; font-family: monospace;
     position: relative;
   }
-  .stat-bar .bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s; }
-  .stat-bar .value { width: 60px; text-align: right; font-size: 11px; font-family: monospace; }
+  .day.ev { background: rgba(229,72,77,0.7); color: #fff; border-color: var(--red); font-weight: bold; }
+  .day.maybe { background: rgba(232,133,59,0.35); color: #ffcf9e; border-color: rgba(232,133,59,0.5); }
+  .day.month { background: rgba(217,169,78,0.3); color: #ffe2a8; border-color: rgba(217,169,78,0.5); }
+  .strip-legend { display: flex; gap: 20px; font-size: 11px; color: var(--muted); margin-top: 8px; flex-wrap: wrap; }
+  .strip-legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
 
-  .fix-summary {
-    background: linear-gradient(135deg, rgba(34,197,94,0.1), rgba(16,185,129,0.05));
-    border: 1px solid rgba(34,197,94,0.4);
-    border-radius: 12px;
-    padding: 24px;
-    margin: 30px 0;
-  }
-  .fix-summary h2 { color: #4ade80; margin-bottom: 16px; }
-  .fix-list { list-style: none; }
-  .fix-list li {
-    padding: 10px 14px;
-    margin: 8px 0;
-    background: rgba(0,0,0,0.3);
-    border-left: 3px solid #4ade80;
-    border-radius: 4px;
-    font-size: 13px;
-  }
-  .fix-list li::before { content: "✓ "; color: #4ade80; font-weight: bold; }
-  .fix-list li.new { border-left-color: #fbbf24; }
-  .fix-list li.new::before { content: "★ "; color: #fbbf24; }
+  /* ===== tables ===== */
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  th, td { padding: 9px 12px; text-align: left; font-size: 12.5px; border-bottom: 1px solid var(--line); }
+  th { color: var(--gold); background: rgba(217,169,78,0.06); font-weight: 700; white-space: nowrap; }
+  td { color: var(--text); }
+  td.mono { font-family: monospace; font-size: 12px; }
+  td.bad { color: #ff8a8e; font-weight: 700; }
+  td.ok { color: var(--green); }
+  td.warn { color: var(--orange); }
+  tr:hover td { background: rgba(255,255,255,0.02); }
 
-  .footer {
-    text-align: center;
-    margin-top: 40px;
-    padding: 20px;
-    color: #7a6b58;
-    font-size: 11px;
-    border-top: 1px solid rgba(168,151,128,0.1);
+  /* ===== pyramid ===== */
+  .pyramid { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 18px 0 8px; }
+  .pyr {
+    text-align: center; border-radius: 8px; padding: 10px 16px;
+    font-size: 13px; font-weight: 700; line-height: 1.5;
   }
+  .pyr small { display: block; font-weight: 400; font-size: 11px; opacity: 0.85; }
+  .pyr.top { width: 46%; background: rgba(229,72,77,0.2); border: 1px solid rgba(229,72,77,0.5); color: #ff9a9e; }
+  .pyr.mid { width: 68%; background: rgba(232,133,59,0.15); border: 1px solid rgba(232,133,59,0.45); color: #ffbf8e; }
+  .pyr.bot { width: 90%; background: rgba(217,169,78,0.1); border: 1px solid rgba(217,169,78,0.35); color: var(--gold); }
+  @media (max-width: 640px) { .pyr.top, .pyr.mid, .pyr.bot { width: 100%; } }
 
-  .chart-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; font-size: 11px; }
-  .chart-legend span { display: inline-flex; align-items: center; gap: 4px; }
-  .chart-legend .dot { width: 10px; height: 10px; border-radius: 50%; }
+  /* ===== tags ===== */
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 10.5px; font-weight: bold; margin: 2px 3px 2px 0; letter-spacing: 1px; }
+  .tag.red { background: rgba(229,72,77,0.16); color: #ff8a8e; }
+  .tag.orange { background: rgba(232,133,59,0.16); color: var(--orange); }
+  .tag.green { background: rgba(70,167,88,0.16); color: var(--green); }
+  .tag.gray { background: rgba(140,125,100,0.16); color: var(--muted); }
+  .tag.gold { background: rgba(217,169,78,0.16); color: var(--gold); }
 
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    margin: 12px 0;
-    background: rgba(0,0,0,0.2);
-    border-radius: 6px;
-    overflow: hidden;
+  /* ===== recheck list ===== */
+  .recheck { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 760px) { .recheck { grid-template-columns: 1fr; } }
+  .rc-item {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px; font-size: 12.5px;
   }
-  th, td {
-    padding: 10px 12px;
-    text-align: left;
-    font-size: 12px;
-    border-bottom: 1px solid rgba(168,151,128,0.1);
-  }
-  th { color: #fbbf24; font-weight: bold; background: rgba(245,158,11,0.05); }
-  td { color: #c8b896; }
-  td.up { color: #4ade80; font-weight: bold; }
-  td.down { color: #f87171; }
-  tr:hover { background: rgba(245,158,11,0.03); }
+  .rc-item .t { font-weight: 700; color: #eadfc4; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+  .rc-item .d { color: var(--muted); font-size: 12px; }
+  .rc-item .d b { color: #ff8a8e; font-weight: 700; }
 
-  .tag {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-size: 10px;
-    font-weight: bold;
-    margin: 2px;
-  }
-  .tag.red { background: rgba(239,68,68,0.2); color: #f87171; }
-  .tag.orange { background: rgba(251,146,60,0.2); color: #fb923c; }
-  .tag.green { background: rgba(34,197,94,0.2); color: #4ade80; }
-  .tag.gray { background: rgba(168,151,128,0.15); color: #a89780; }
-  .tag.gold { background: rgba(245,158,11,0.2); color: #fbbf24; }
-
+  /* ===== verdict ===== */
   .verdict {
-    background: linear-gradient(135deg, rgba(34,197,94,0.1), rgba(245,158,11,0.05));
-    border: 1px solid rgba(74,222,128,0.4);
-    padding: 24px;
-    border-radius: 12px;
-    margin: 30px 0;
+    background: linear-gradient(135deg, rgba(229,72,77,0.1), rgba(217,169,78,0.05));
+    border: 1px solid rgba(229,72,77,0.4);
+    padding: 32px; border-radius: 14px; margin: 40px 0; text-align: center;
   }
-  .verdict h2 { color: #4ade80; margin-bottom: 12px; font-size: 18px; }
-  .verdict p { color: #c8b896; font-size: 14px; margin-bottom: 10px; }
-  .verdict .grade-final {
-    font-size: 48px;
-    font-weight: bold;
-    color: #4ade80;
-    font-family: monospace;
-    letter-spacing: 4px;
+  .verdict .grade { font-size: 64px; font-weight: 800; color: var(--red); font-family: monospace; letter-spacing: 6px; }
+  .verdict h2 { color: #eadfc4; font-size: 19px; margin-bottom: 14px; letter-spacing: 3px; }
+  .verdict p { font-size: 14px; color: var(--text); max-width: 780px; margin: 8px auto; text-align: left; }
+
+  /* ===== prescriptions ===== */
+  .rx { border-radius: 12px; padding: 20px 24px; margin-bottom: 12px; border: 1px solid var(--line); background: var(--panel); }
+  .rx h3 { font-size: 15px; margin-bottom: 8px; }
+  .rx.p0 h3 { color: #ff8a8e; } .rx.p1 h3 { color: var(--orange); } .rx.p2 h3 { color: var(--gold); }
+  .rx ul { margin-left: 18px; }
+  .rx li { font-size: 13px; margin: 6px 0; color: var(--text); }
+  .rx li b { color: #f0e2c4; }
+
+  .footer { text-align: center; margin-top: 60px; font-size: 11px; color: var(--muted); line-height: 2; }
+
+  /* toc */
+  .toc { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 42px; }
+  .toc a {
+    color: var(--gold-dim); text-decoration: none; font-size: 12px;
+    border: 1px solid var(--line); border-radius: 999px; padding: 5px 14px;
+    transition: all .2s;
   }
+  .toc a:hover { color: var(--gold); border-color: var(--gold); background: rgba(217,169,78,0.08); }
 </style>
 </head>
 <body>
 <div class="container">
 
+  <!-- ================= HEADER ================= -->
   <div class="header">
     <h1>宰 执 春 秋</h1>
-    <div class="subtitle">可玩性深度诊断报告 · v1.4 → v1.5</div>
-    <div class="meta">生成时间：2026-07-28 · 诊断版本：1.5.0 · 本轮聚焦：深度系统化 + 国情叙事 + 中央运算引擎</div>
-    <div class="score-jump">
-      <span class="score-old">v1.3 评分 62 / 100</span>
-      <span class="score-arrow">→</span>
-      <span class="score-old">v1.4 评分 76 / 100</span>
-      <span class="score-arrow">→</span>
-      <span class="score-new">v1.5 评分 86 / 100</span>
+    <div class="sub">为什么<strong>不好玩</strong> —— 基于全量代码审查的病理诊断</div>
+    <div class="meta">生成于 2026-07-28 · 审查范围：engine / store / data / pages / components 全量源码 · 本报告推翻 v1.5 自评结论</div>
+  </div>
+
+  <div class="score-strip">
+    <div class="score-box">
+      <div class="lbl">上一版报告自评</div>
+      <div class="val fake">86 / 100</div>
+      <div class="note">"A-，有结构、有历史、有博弈"</div>
+    </div>
+    <div class="score-box">
+      <div class="lbl">本次代码实证评分</div>
+      <div class="val real">42 / 100</div>
+      <div class="note">系统很多，游戏很少</div>
+    </div>
+    <div class="score-box">
+      <div class="lbl">评分虚高幅度</div>
+      <div class="val gap">+44</div>
+      <div class="note">上版按"功能是否存在"打分，不问"是否好玩"</div>
     </div>
   </div>
 
-  <div class="summary-card">
-    <h2>核心结论 <span class="score">综合可玩性评分：86 / 100（↑10）</span></h2>
-    <p>本轮 v1.5 在 v1.4 已建好的"指标-事件-改革"三层骨架之上，<strong>完成了一次结构性升级</strong>：从"被动叙事"转向"主动模拟"。
-    引入了<strong>中央运算引擎</strong>对地方-中央-外交-议会进行集中分析；事件从"日历定时投放"改为"按当前局势加权"；<strong>naturalDecay 重做</strong>避免中段努力被没收；事件效果放大至 ±8~15 并带二阶延迟后果；
-    失败线从"硬扣到 15"改为"民意&lt;35 触发党内逼宫链"的滑坡式危机；<strong>21 天自动决策改为最差选项</strong>让忽视有代价。
-    叠加<strong>月度归因报告、国情页面（立国史+实时现状）、48 月任期修正、参数化法案、密室代表随机生成、统一收件箱、NPC 主动 AI、军事作战指挥</strong>等新系统，
-    玩家终于能感受到"在治理一个有历史、有结构、有内部博弈的国家"，而非填表。剩余 14 分主要在视觉打磨、AI 智能深度、教程引导细节。</p>
+  <!-- ================= TL;DR ================= -->
+  <div class="tldr">
+    <h2>⚡ 核心结论（先说人话）</h2>
+    <div class="one-liner">
+      这个游戏的本质是：<em>一个每 0.7~4 秒自动跳一天的屏保</em>，玩家平均每月只有 <em>3 次点击 + 约 1 个事件弹窗</em> 的真实游玩量；
+      而当事件真的弹出来时，它又是一道<em>小学算术题</em>——把选项数字加一加，选净值最大的那个，永远不会错。
+    </div>
+    <p><strong>五句话病理摘要：</strong></p>
+    <p>① <strong>核心循环空转</strong> —— 时间自动流逝但九成以上的"天"什么都不发生，主事件 35 天才检查一次，玩家的工作是看日期跳动。</p>
+    <p>② <strong>决策没有权衡</strong> —— 所有事件选项都是确定性加减法，结局评级又是六项指标的简单平均，导致"选项净值最大者恒为最优"，二周目即通解。</p>
+    <p>③ <strong>死不了也赢不难</strong> —— 指标低于 20 每月自动 +2 回血、政治资本每月自动 +5、"破产危机"事件本身回填国库 +15~20，安全网多到躺平也触不了底。</p>
+    <p>④ <strong>内容池撑不满任期</strong> —— 48 个月的任期，约第 12~20 个月起进入复读期；号称防复读的"变体系统"因 ID 前缀映射写错，实为死代码。</p>
+    <p>⑤ <strong>广而薄</strong> —— 22 个页面、22 个快捷键、32 步教程，但外交页只有 1 个可点动词、卡牌系统只有 13 张卡（7 张成功率还是 100%）。玩家学得多，玩到的少。</p>
   </div>
 
-  <!-- 八大维度评分对比 -->
-  <div class="section">
-    <div class="section-title">
-      <span class="num">📊</span>
-      <h2>八大维度评分对比（v1.4 → v1.5）</h2>
+  <div class="toc">
+    <a href="#recheck">上版"已解决"复查</a>
+    <a href="#p1">病灶① 挂机循环</a>
+    <a href="#p2">病灶② 算术题决策</a>
+    <a href="#p3">病灶③ 没有张力</a>
+    <a href="#p4">病灶④ 内容枯竭</a>
+    <a href="#p5">病灶⑤ 广而薄</a>
+    <a href="#p6">病灶⑥ 反馈断裂</a>
+    <a href="#rx">处方</a>
+    <a href="#verdict">最终评级</a>
+  </div>
+
+  <!-- ================= RECHECK ================= -->
+  <div class="section" id="recheck">
+    <div class="sec-head">
+      <span class="num">🔍</span>
+      <h2>上版报告 12 项"已解决"的逐条复查</h2>
+      <span class="sev s1">半数注水</span>
     </div>
+    <div class="card" style="margin-bottom:14px;">
+      <p>上版报告把 12 个病根全部标记为 <span class="tag green">已解决</span> 并给出 86 分。逐条对照源码后：<strong>4 项属实、5 项"做了但没用/引入新问题"、3 项名不副实</strong>。</p>
+    </div>
+    <div class="recheck">
+      <div class="rc-item">
+        <div class="t"><span class="tag red">死代码</span>事件变体防复读</div>
+        <div class="d">eventVariants.ts 按 <b>eco_/soc_/dip_</b> 前缀匹配分类，但真实事件 ID 全是 <b>evt_/cross_/fate_</b> 前缀——8 类映射只有"紧急 emg_"能命中。<b>复读照旧，变体几乎永不触发。</b></div>
+      </div>
+      <div class="rc-item">
+        <div class="t"><span class="tag red">文档撒谎</span>月度归因报告</div>
+        <div class="d">百科宣称"归因数据保留 12 个月"，代码 <b>gameStore.ts L751 实际只保留 3 个月</b>；"宏观引擎传导"一栏是把无法分解的残差打包成一条模糊条目（注释自认"粗略"）。</div>
+      </div>
+      <div class="rc-item">
+        <div class="t"><span class="tag orange">副作用</span>naturalDecay 重做</div>
+        <div class="d">中段不再没收努力——是真的。但 &lt;20 每月自动 +2 的"喘息机制"配合失败线 &lt;10，让游戏<b>躺平也几乎死不了</b>，张力归零。</div>
+      </div>
+      <div class="rc-item">
+        <div class="t"><span class="tag orange">副作用</span>事件效果 ×2 放大</div>
+        <div class="d">EVENT_EFFECT_AMPLIFIER=2 确实生效。副作用：玩家日常行动（+2~8、冷却 5~8 个月）在事件 ±8~15 面前<b>更加无足轻重</b>，玩家的"手"变得更弱了。</div>
+      </div>
+      <div class="rc-item">
+        <div class="t"><span class="tag orange">副作用</span>超时自动选最差</div>
+        <div class="d">pickWorstOptionId 生效。但事件在<b>后台队列里悄悄超时</b>，快进挂机的玩家在毫无感知中被扣满负面——不是"忽视有代价"，是"莫名其妙被惩罚"。</div>
+      </div>
+      <div class="rc-item">
+        <div class="t"><span class="tag orange">幅度太小</span>中央运算引擎</div>
+        <div class="d">runCentralAnalysis 确实每月运行，但传导幅度封顶 <b>±1~3 点</b>，且长官忠诚每月向 50 回归，系统长期收敛到"加权值≈50 → delta≈0"。<b>被事件 ±10 的波动完全淹没，玩家不可感知。</b></div>
+      </div>
+      <div class="rc-item">
+        <div class="t"><span class="tag orange">内容太少</span>NPC 主动 AI</div>
+        <div class="d">机制存在，但行为库只有 <b>10 条</b>，每 60 天检查一次；48 个月约 24 次检查，<b>每条内容平均被复读 2 次以上</b>，且每条只有 3 个固定选项。</div>
+      </div>
+      <div class="rc-item">
+        <div class="t"><span class="tag green">属实</span>统一收件箱 / 48月任期 / 密室随机 / 历史曲线</div>
+        <div class="d">这 4 项确实按描述实现且运作正常。但它们是"信息呈现"层面的改良，<b>不触及核心循环与决策质量</b>，对可玩性提升有限。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 病灶 1 ================= -->
+  <div class="section" id="p1">
+    <div class="sec-head">
+      <span class="num">①</span>
+      <h2>核心循环 = 挂机等待：伪即时制下的"屏保游戏"</h2>
+      <span class="sev s0">致命</span>
+    </div>
+
     <div class="card">
-      <table>
-        <thead>
-          <tr>
-            <th>维度</th>
-            <th>v1.3</th>
-            <th>v1.4</th>
-            <th>v1.5</th>
-            <th>变化</th>
-            <th>说明</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>系统连接度</td>
-            <td>3 / 10</td>
-            <td>7 / 10</td>
-            <td class="up">9 / 10</td>
-            <td class="up">↑2</td>
-            <td>中央运算引擎 runCentralAnalysis 每月统一分析；归因报告让玩家看清"变化来源"</td>
-          </tr>
-          <tr>
-            <td>决策权衡</td>
-            <td>4 / 10</td>
-            <td>6 / 10</td>
-            <td class="up">8.5 / 10</td>
-            <td class="up">↑2.5</td>
-            <td>事件效果 ±8~15 + 二阶延迟后果；失败线滑坡式逼宫而非硬扣</td>
-          </tr>
-          <tr>
-            <td>反馈深度</td>
-            <td>5 / 10</td>
-            <td>7 / 10</td>
-            <td class="up">9 / 10</td>
-            <td class="up">↑2</td>
-            <td>历史曲线（GDP/失业率/民意）+ 月度归因报告 + 国情实时现状速写</td>
-          </tr>
-          <tr>
-            <td>NPC 活力</td>
-            <td>3 / 10</td>
-            <td>6 / 10</td>
-            <td class="up">8 / 10</td>
-            <td class="up">↑2</td>
-            <td>NPC 主动 AI：每 60 天检查触发条件，主动发起来电/拜访/公开声明</td>
-          </tr>
-          <tr>
-            <td>总理个人维度</td>
-            <td>2 / 10</td>
-            <td>7 / 10</td>
-            <td>7 / 10</td>
-            <td>—</td>
-            <td>v1.4 已建好家庭/腐败/压力三维度，本轮保持稳定</td>
-          </tr>
-          <tr>
-            <td>事件丰富度</td>
-            <td>4 / 10</td>
-            <td>7 / 10</td>
-            <td class="up">9 / 10</td>
-            <td class="up">↑2</td>
-            <td>参数化法案（议题×强度×派系）+ 密室代表随机生成 + 事件链多阶段化</td>
-          </tr>
-          <tr>
-            <td>军事系统</td>
-            <td>3 / 10</td>
-            <td>6 / 10</td>
-            <td class="up">8 / 10</td>
-            <td class="up">↑2</td>
-            <td>军事作战指挥界面：前线部署/将领调度/战役事件</td>
-          </tr>
-          <tr>
-            <td>叙事连贯</td>
-            <td>4 / 10</td>
-            <td>6 / 10</td>
-            <td class="up">8.5 / 10</td>
-            <td class="up">↑2.5</td>
-            <td>国情页面立国史（4 段）+ 实时现状速写（8 维度）让国家有"档案"</td>
-          </tr>
-          <tr>
-            <td>失败惩罚</td>
-            <td>3 / 10</td>
-            <td>6 / 10</td>
-            <td class="up">8.5 / 10</td>
-            <td class="up">↑2.5</td>
-            <td>21 天自动选最差 + 党内逼宫链 + 滑坡式危机</td>
-          </tr>
-          <tr style="background: rgba(245,158,11,0.05);">
-            <td><strong>综合</strong></td>
-            <td><strong>62 / 100</strong></td>
-            <td><strong>76 / 100</strong></td>
-            <td class="up"><strong>86 / 100</strong></td>
-            <td class="up"><strong>↑10</strong></td>
-            <td>从"可玩但单薄"到"有结构、有历史、有内部博弈"</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- 病根 1：中央运算引擎 -->
-  <div class="section">
-    <div class="section-title">
-      <span class="num">1</span>
-      <h2>缺少中央模拟引擎 · 系统彼此隔绝</h2>
-      <span class="severity resolved">已解决</span>
-    </div>
-    <div class="card">
-      <h3>现状</h3>
-      <p class="desc">v1.4 已建立 simulation.ts，但仅做月度指标结算。各模块（地方/中央/外交/议会）仍各自为政，地方行政效果不会反馈到中央，外交关系不会传导到议会信任。</p>
-      <div class="fix">✅ v1.5 新增 runCentralAnalysis：每月统一运算地方忠诚度→全国稳定度、长官能力→经济贡献、跨区动荡扩散、极端区警报。归因条目同步写入 pendingAttributionBuffer，玩家可在月度归因报告页面追溯每条变化的来源。</div>
-    </div>
-  </div>
-
-  <!-- 病根 2：决策数字填充 -->
-  <div class="section">
-    <div class="section-title">
-      <span class="num">2</span>
-      <h2>决策沦为"数字填充" · 缺乏权衡</h2>
-      <span class="severity resolved">已解决</span>
-    </div>
-    <div class="card">
-      <h3>现状</h3>
-      <p class="desc">v1.4 事件效果 ±3~5，权衡感弱；忽视事件仅"自动选默认选项"，没有惩罚。</p>
-      <div class="fix">✅ v1.5 事件效果放大至 ±8~15，部分选项携带二阶延迟后果（delayedConsequence，30/60/90 天后引爆）；21 天自动决策改为"自动选最差选项"，让忽视有代价。</div>
-    </div>
-  </div>
-
-  <!-- 病根 3：naturalDecay 没收中段努力 -->
-  <div class="section">
-    <div class="section-title">
-      <span class="num">3</span>
-      <h2>naturalDecay 没收中段努力</h2>
-      <span class="severity resolved">已解决</span>
-    </div>
-    <div class="card">
-      <h3>现状</h3>
-      <p class="desc">原版每回合所有指标向 50 回归，玩家辛辛苦苦把民意拉到 65，下回合自动回落到 60，让玩家觉得"努力无意义"。</p>
-      <div class="fix">✅ v1.5 砍掉中段回归，仅在极端值生效：指标 &lt; 20 时缓慢回升到 25（避免硬死）、指标 &gt; 80 时缓慢回落到 78（避免滚雪球）。中段 20-80 之间完全保留玩家努力。</div>
-    </div>
-  </div>
-
-  <!-- 病根 4：失败线闷到 15 -->
-  <div class="section">
-    <div class="section-title">
-      <span class="num">4</span>
-      <h2>失败线闷到 15 · 无渐进危机</h2>
-      <span class="severity resolved">已解决</span>
-    </div>
-    <div class="card">
-      <h3>现状</h3>
-      <p class="desc">原版民意跌到 15 才触发紧急事件，玩家在中段毫无感知，到点直接 Game Over。</p>
-      <div class="fix">✅ v1.5 失败线抬升至 35 并做成滑坡：民意 &lt; 35 触发"党内逼宫链"多阶段事件（警告 → 派系挑战 → 党魁争夺 → 倒阁），每阶段给玩家干预机会；民意 &lt; 25 才进入"全国大罢工"紧急事件。</div>
-    </div>
-  </div>
-
-  <!-- 病根 5：事件日历式投放 -->
-  <div class="section">
-    <div class="section-title">
-      <span class="num">5</span>
-      <h2>事件日历式投放 · 与局势脱节</h2>
-      <span class="severity resolved">已解决</span>
-    </div>
-    <div class="card">
-      <h3>现状</h3>
-      <p class="desc">v1.4 事件按日历定时投放，玩家经济危机时不会多发经济类事件，社会动荡时不会多发抗议类事件。</p>
-      <div class="fix">✅ v1.5 引入 getSituationalCategoryWeight：经济 &lt; 30 时经济类事件权重 ×2.5；稳定 &lt; 30 时社会类事件权重 ×2.5；外交 &lt; 30 时外交类权重 ×2.2。冷却期内提供改写变体（applyVariantIfRepeated），杜绝原文复读。</div>
-    </div>
-  </div>
-
-  <!-- 病根 6：事件篮分散 -->
-  <div class="section">
-    <div class="section-title">
-      <span class="num">6</span>
-      <h2>五类事件容器分散 · 难以统筹</h2>
-      <span class="severity resolved">已解决</span>
-    </div>
-    <div class="card">
-      <h3>现状</h3>
-      <p class="desc">v1.4 信件、照会、倒计时、紧急、内阁聊天各占一个入口，玩家需要在多个页面间切换。</p>
-      <div class="fix">✅ v1.5 五类事件容器合并为统一收件箱 pendingEvents，按优先级分层（critical / high / normal）；事件篮改至右侧 SideRail，等待时间从 7 天到 42 天不等（critical 7d、high 14d、normal 21d、low 42d）。</div>
-    </div>
-  </div>
-
-  <!-- 病根 7：NPC 静态化 -->
-  <div class="section">
-    <div class="section-title">
-      <span class="num">7</span>
-      <h2>NPC 静态化 · 被动等待</h2>
-      <span class="severity resolved">已解决</span>
-    </div>
-    <div class="card">
-      <h3>现状</h3>
-      <p class="desc">v1.4 NPC 仅响应事件，从不主动联系玩家。</p>
-      <div class="fix">✅ v1.5 引入 pickNPCProactiveAction：每 60 天检查一次，根据 NPC 状态（忠诚度、派系、近期事件）主动发起来电、拜访或公开声明。如反对党党魁在民意 &lt; 40 时主动施压、军火商在战争期间主动推销、宗教领袖在稳定 &lt; 35 时主动调解。</div>
-    </div>
-  </div>
-
-  <!-- 病根 8：战争纯数值结算 -->
-  <div class="section">
-    <div class="section-title">
-      <span class="num">8</span>
-      <h2>战争纯数值结算 · 无作战指挥</h2>
-      <span class="severity resolved">已解决</span>
-    </div>
-    <div class="card">
-      <h3>现状</h3>
-      <p class="desc">v1.4 战争仅靠双方军事力量对比决定胜负，玩家无介入感。</p>
-      <div class="fix">✅ v1.5 新增军事作战指挥界面：前线部署（兵力分配）/ 将领调度（能力 × 忠诚度）/ 战役事件（每个战役随机触发 1-3 个决策点）。将领能力影响战力修正 ±20%，玩家选择激进/保守/谨慎战术影响伤亡比。</div>
-    </div>
-  </div>
-
-  <!-- 病根 9：任期错误 -->
-  <div class="section">
-    <div class="section-title">
-      <span class="num">9</span>
-      <h2>任期长度错误（5 年 → 4 年 / 48 月）</h2>
-      <span class="severity resolved">已解决</span>
-    </div>
-    <div class="card">
-      <h3>现状</h3>
-      <p class="desc">v1.4 文档与多处 UI 显示"5 年任期"，但实际游戏机制为 48 个月（4 年），造成玩家困惑。</p>
-      <div class="fix">✅ v1.5 全局修正：GAME_GUIDE.md、百科、历史曲线、任期进度条统一为"48 个月 / 4 年"。</div>
-    </div>
-  </div>
-
-  <!-- 病根 10：国情无档案 -->
-  <div class="section">
-    <div class="section-title">
-      <span class="num">10</span>
-      <h2>国家无历史档案 · 玩家代入感弱</h2>
-      <span class="severity resolved">已解决</span>
-    </div>
-    <div class="card">
-      <h3>现状</h3>
-      <p class="desc">v1.4 玩家治理的是"一个抽象的共和国"，没有立国史、没有现状速写，国家仅是一组指标的容器。</p>
-      <div class="fix">✅ v1.5 国情页面新增「国家档案」Tab：立国史（4 段叙事：立宪之初 → 中兴年代 → 动荡岁月 → 当代格局）+ 实时现状速写（8 维度动态文本：政局稳定度 / 经济形势 / 财政状况 / 民心向背 / 外交态势 / 地方动态 / 内阁与议会气象 / 总理威望）。每条文本依据当前 metrics / regions / countries / cabinet / npcMemories / parliament 实时生成，随局势演变。</div>
-    </div>
-  </div>
-
-  <!-- 病根 11：法律静态化 -->
-  <div class="section">
-    <div class="section-title">
-      <span class="num">11</span>
-      <h2>法律静态化 · 无派系博弈</h2>
-      <span class="severity resolved">已解决</span>
-    </div>
-    <div class="card">
-      <h3>现状</h3>
-      <p class="desc">v1.4 法律为固定的 7 组 × 3 档，无派系提出、无强度变化、无契合度加成。</p>
-      <div class="fix">✅ v1.5 法案参数化生成：议题（6 类）× 强度（温和/标准/激进）× 受益派系（6 类）。每月由各派系议员随机提出 3 条提案，玩家可推动立法或搁置；派系契合度加成 +20%。</div>
-    </div>
-  </div>
-
-  <!-- 病根 12：密室代表固定 -->
-  <div class="section">
-    <div class="section-title">
-      <span class="num">12</span>
-      <h2>密室代表固定 · 重复体验</h2>
-      <span class="severity resolved">已解决</span>
-    </div>
-    <div class="card">
-      <h3>现状</h3>
-      <p class="desc">v1.4 密室谈判代表固定 4 位、固定位置、固定诉求，玩家通关一次后失去新鲜感。</p>
-      <div class="fix">✅ v1.5 密室代表随机生成：每次进入时随机抽 4-7 位（从 8 类派系无重复抽取），位置在 5×5 棋盘上随机分布，影响力按派系 influenceRange 随机，诉求从该派系 demands 池中随机选一条。</div>
-    </div>
-  </div>
-
-  <!-- 数据可视化：系统连接度 -->
-  <div class="section">
-    <div class="section-title">
-      <span class="num">📊</span>
-      <h2>系统连接度对比（v1.3 / v1.4 / v1.5）</h2>
-    </div>
-    <div class="card">
-      <h3>系统间传导链数量演化</h3>
-      <div class="stat-bar">
-        <span class="label">经济 ↔ 社会</span>
-        <div class="bar-bg"><div class="bar-fill" style="width: 15%; background: #f87171;"></div></div>
-        <span class="value">v1.3</span>
+      <h3>玩家的一个月长什么样（源码实测）</h3>
+      <p>时间由定时器强制推进（0.666~4 秒/天，<span class="mono">TimeControl.tsx L23-29</span>），<strong>没有手动"下一天"按钮，也没有"跳到下一事件"功能</strong>。所有内容生成都挂在天数模数上：</p>
+      <div class="day-strip" id="dayStrip"></div>
+      <div class="strip-legend">
+        <span><span class="dot" style="background:rgba(255,255,255,0.06)"></span>空天（只有日期自增+冷却清理）</span>
+        <span><span class="dot" style="background:rgba(229,72,77,0.7)"></span>事件检查日（还不一定真出事件）</span>
+        <span><span class="dot" style="background:rgba(217,169,78,0.3)"></span>月末结算日</span>
       </div>
-      <div class="stat-bar">
-        <span class="label">经济 ↔ 社会</span>
-        <div class="bar-bg"><div class="bar-fill" style="width: 80%; background: #fb923c;"></div></div>
-        <span class="value">v1.4</span>
-      </div>
-      <div class="stat-bar">
-        <span class="label">经济 ↔ 社会</span>
-        <div class="bar-bg"><div class="bar-fill" style="width: 95%; background: #4ade80;"></div></div>
-        <span class="value">v1.5</span>
-      </div>
-      <div class="stat-bar">
-        <span class="label">地方 ↔ 中央</span>
-        <div class="bar-bg"><div class="bar-fill" style="width: 0%; background: #f87171;"></div></div>
-        <span class="value">v1.3</span>
-      </div>
-      <div class="stat-bar">
-        <span class="label">地方 ↔ 中央</span>
-        <div class="bar-bg"><div class="bar-fill" style="width: 20%; background: #fb923c;"></div></div>
-        <span class="value">v1.4</span>
-      </div>
-      <div class="stat-bar">
-        <span class="label">地方 ↔ 中央</span>
-        <div class="bar-bg"><div class="bar-fill" style="width: 90%; background: #4ade80;"></div></div>
-        <span class="value">v1.5</span>
-      </div>
-      <div class="stat-bar">
-        <span class="label">军事 ↔ 国库</span>
-        <div class="bar-bg"><div class="bar-fill" style="width: 5%; background: #f87171;"></div></div>
-        <span class="value">v1.3</span>
-      </div>
-      <div class="stat-bar">
-        <span class="label">军事 ↔ 国库</span>
-        <div class="bar-bg"><div class="bar-fill" style="width: 75%; background: #fb923c;"></div></div>
-        <span class="value">v1.4</span>
-      </div>
-      <div class="stat-bar">
-        <span class="label">军事 ↔ 国库</span>
-        <div class="bar-bg"><div class="bar-fill" style="width: 92%; background: #4ade80;"></div></div>
-        <span class="value">v1.5</span>
-      </div>
-      <div class="stat-bar">
-        <span class="label">法律 ↔ 跨系统</span>
-        <div class="bar-bg"><div class="bar-fill" style="width: 0%; background: #f87171;"></div></div>
-        <span class="value">v1.3</span>
-      </div>
-      <div class="stat-bar">
-        <span class="label">法律 ↔ 跨系统</span>
-        <div class="bar-bg"><div class="bar-fill" style="width: 65%; background: #fb923c;"></div></div>
-        <span class="value">v1.4</span>
-      </div>
-      <div class="stat-bar">
-        <span class="label">法律 ↔ 跨系统</span>
-        <div class="bar-bg"><div class="bar-fill" style="width: 88%; background: #4ade80;"></div></div>
-        <span class="value">v1.5</span>
-      </div>
-      <div class="stat-bar">
-        <span class="label">NPC ↔ 事件</span>
-        <div class="bar-bg"><div class="bar-fill" style="width: 20%; background: #f87171;"></div></div>
-        <span class="value">v1.3</span>
-      </div>
-      <div class="stat-bar">
-        <span class="label">NPC ↔ 事件</span>
-        <div class="bar-bg"><div class="bar-fill" style="width: 75%; background: #fb923c;"></div></div>
-        <span class="value">v1.4</span>
-      </div>
-      <div class="stat-bar">
-        <span class="label">NPC ↔ 事件</span>
-        <div class="bar-bg"><div class="bar-fill" style="width: 90%; background: #4ade80;"></div></div>
-        <span class="value">v1.5</span>
-      </div>
-      <div class="chart-legend">
-        <span><span class="dot" style="background:#f87171"></span>v1.3（孤岛）</span>
-        <span><span class="dot" style="background:#fb923c"></span>v1.4（初步联动）</span>
-        <span><span class="dot" style="background:#4ade80"></span>v1.5（深度联动）</span>
+      <p style="margin-top:12px;">上图是游戏内典型的 35 天：<span class="hl-red">约 90% 以上的天数是纯空转</span>。即使到了检查日，<span class="mono">pickEvent</span> 也可能返回空（质询仅 12%~30% 概率），事件队列满 3 个时直接跳过。</p>
+      <div class="evidence">
+<span class="file">eventEngine.ts advanceDay()</span> —— 内容闹钟全览：<br>
+主事件 <span class="k">%35 天</span>（且 pendingEvents&lt;3）｜ 紧急 <span class="k">%25 天</span> ｜ 入侵 <span class="k">%30 天</span> ｜ 特质 <span class="k">%30 天</span><br>
+NPC主动 <span class="k">%60 天</span> ｜ 内阁聊天 <span class="k">%75 天</span> ｜ 质询/信件/命运 <span class="k">%90 天</span> ｜ 照会 <span class="k">%120 天</span><br>
+<span class="bad">注释原文自认："事件触发频率显著降低：每 35 天检查一次（原 25 天）" —— 是刻意进一步放慢的</span>
       </div>
     </div>
-  </div>
 
-  <!-- 修复总结 -->
-  <div class="fix-summary">
-    <h2>本轮修复清单（v1.5）</h2>
-    <ul class="fix-list">
-      <li class="new"><strong>中央运算引擎 runCentralAnalysis</strong>：地方忠诚→全国稳定度、长官能力→经济贡献、跨区动荡扩散、极端区警报，每月统一运算并归因</li>
-      <li class="new"><strong>月度归因报告</strong>：本月每条指标变化来自哪个决策/事件/改革，玩家可追溯因果</li>
-      <li class="new"><strong>国情页面（立国史 + 实时现状速写）</strong>：4 段历史叙事 + 8 维度动态文本，国家不再是抽象容器</li>
-      <li class="new"><strong>naturalDecay 重做</strong>：仅在极端值（&lt;20 或 &gt;80）生效，中段努力完全保留</li>
-      <li class="new"><strong>事件效果放大 ±8~15</strong>：携带二阶延迟后果（delayedConsequence，30/60/90 天后引爆）</li>
-      <li class="new"><strong>失败线滑坡化</strong>：民意 &lt; 35 触发党内逼宫链多阶段事件，&lt; 25 才进入大罢工</li>
-      <li class="new"><strong>21 天自动决策改为最差选项</strong>：让忽视有代价</li>
-      <li class="new"><strong>事件按当前局势加权</strong>：getSituationalCategoryWeight，危机时多发对应领域事件</li>
-      <li class="new"><strong>冷却期改写变体</strong>：applyVariantIfRepeated，杜绝原文复读</li>
-      <li class="new"><strong>统一收件箱</strong>：五类事件合并 + 优先级分层（critical/high/normal/low），等待 7-42 天</li>
-      <li class="new"><strong>事件篮移至 SideRail</strong>：右侧常驻，与游戏主视图并行</li>
-      <li class="new"><strong>48 月任期修正</strong>：全局从 60 月/5 年改为 48 月/4 年</li>
-      <li class="new"><strong>参数化法案</strong>：议题 × 强度 × 受益派系，每月 3 条派系提案，玩家可推动或搁置</li>
-      <li class="new"><strong>密室代表随机生成</strong>：4-7 位、位置随机、影响力随机、诉求随机</li>
-      <li class="new"><strong>历史曲线面板</strong>：GDP/失业率/民意的月度 SVG 折线图，让玩家看到趋势而非瞬时值</li>
-      <li class="new"><strong>NPC 主动 AI</strong>：每 60 天检查，主动发起来电/拜访/公开声明</li>
-      <li class="new"><strong>军事作战指挥界面</strong>：前线部署/将领调度/战役事件</li>
-      <li class="new"><strong>事件链多阶段化</strong>：边境冲突 → 升级 → 谈判 → 制裁，EventChainDefinition 系统</li>
-      <li><strong>保留 v1.4 系统</strong>：宏观模拟引擎、军事三军+将领+军费、7 组×3 档法律、外交动态化、总理个人生活、NPC 15 位、跨系统联动事件、SocietyPage/EnvironmentPage/PMProfilePage/LawsPage 美化</li>
-      <li><strong>教程/百科/GAME_GUIDE 同步更新</strong>：v1.5.0 加入新系统说明</li>
-    </ul>
-  </div>
-
-  <!-- 最终评级 -->
-  <div class="verdict">
-    <h2>最终评级</h2>
-    <p>经过 v1.4 → v1.5 两轮结构性升级，《宰执春秋》已从"可玩但单薄的原型"进化为"<strong>有结构、有历史、有内部博弈的治理模拟器</strong>"。</p>
-    <p>玩家不再面对一组孤立的指标，而是治理一个有六十年立国史、八大行政区、六国邻邦、十五位活跃政客、中央与地方博弈的活的国家。每一次决策都会通过中央运算引擎传导到地方、外交、议会，最终回到总理威望本身——这就是"治理"应有的样子。</p>
-    <div class="grade-final">A −</div>
-    <p style="margin-top: 14px; font-size: 12px; color: #a89780;">
-      剩余 14 分主要在：视觉细节打磨（4 分）、NPC AI 智能深度（3 分）、教程引导细节（3 分）、
-      事件文本多样性（2 分）、性能优化（2 分）。这些属于"锦上添花"，不影响核心可玩性。
-    </p>
-  </div>
-
-  <!-- 后续建议 -->
-  <div class="section">
-    <div class="section-title">
-      <span class="num">🔮</span>
-      <h2>后续改进建议（v1.6+）</h2>
-    </div>
-    <div class="grid-2">
+    <div class="grid2">
       <div class="card">
-        <h3>视觉打磨</h3>
-        <p class="desc">页面间风格统一、动效细节、loading 状态</p>
-        <span class="tag orange">优先级 中</span>
+        <h3>"日常行动"名不副实：每月 3 点 AP + 一个填充桶</h3>
+        <p>组件叫 <span class="mono">DailyActionsPanel</span>，行动力却<strong>按月配给</strong>（3 点，健康低时 2 点）。全部行动只有 4 个：</p>
+        <table>
+          <tr><th>行动</th><th>效果</th><th>冷却</th></tr>
+          <tr><td>发表全国演说</td><td class="mono">民意+3~8 威望+2</td><td class="bad">6 个月</td></tr>
+          <tr><td>视察地方</td><td class="mono">民意+4 稳定+3 经济+2</td><td class="bad">8 个月</td></tr>
+          <tr><td>外交热线</td><td class="mono">外交+2~6 威望+1</td><td class="bad">5 个月</td></tr>
+          <tr><td>处理日常政务</td><td class="mono">国库+2</td><td class="ok">无冷却</td></tr>
+        </table>
+        <p>三个有效行动被 5~8 个月的冷却锁死，<span class="hl-red">大部分月份的 3 点 AP 只能倒进"+2 国库"这个垃圾桶</span>——而国库每月自然 -1，净收益微乎其微。</p>
       </div>
       <div class="card">
-        <h3>NPC AI 深度</h3>
-        <p class="desc">基于 LLM 的动态对话、NPC 间关系网、派系联盟演化</p>
-        <span class="tag orange">优先级 中</span>
-      </div>
-      <div class="card">
-        <h3>教程引导</h3>
-        <p class="desc">渐进式 onboarding、关键系统提示、首次失败时的解释</p>
-        <span class="tag orange">优先级 中</span>
-      </div>
-      <div class="card">
-        <h3>性能优化</h3>
-        <p class="desc">大型存档加载、长游戏后期事件池检索、SVG 曲线渲染</p>
-        <span class="tag gray">优先级 低</span>
-      </div>
-      <div class="card">
-        <h3>多结局扩展</h3>
-        <p class="desc">基于历史曲线的结局判定、不同的"功过评价"</p>
-        <span class="tag gray">优先级 低</span>
-      </div>
-      <div class="card">
-        <h3>沙盒模式</h3>
-        <p class="desc">无任期限制、自定义初始条件、模组支持</p>
-        <span class="tag gray">优先级 低</span>
+        <h3>48 个月任期 = 多少现实时间的等待？</h3>
+        <div class="bar-row"><span class="bl">1 档（4000ms/天）</span><div class="bt"><div class="bf red" style="width:97%"></div></div><span class="bv red">≈ 97 分钟</span></div>
+        <div class="bar-row"><span class="bl">3 档"标准"（1500ms）</span><div class="bt"><div class="bf orange" style="width:37%"></div></div><span class="bv red">≈ 36.5 分钟</span></div>
+        <div class="bar-row"><span class="bl">5 档极速（666ms）</span><div class="bt"><div class="bf gold" style="width:16%"></div></div><span class="bv gold">≈ 16 分钟</span></div>
+        <p style="margin-top:10px;">这是<strong>纯等待时间</strong>（1460 天 × 每天间隔）。同期玩家真正的"操作预算"：约 <span class="hl-gold">48 个月 × 3 次点击 + 约 40~60 个事件弹窗</span>。 操作密度低到接近放置类游戏，但游戏又没有放置类的"离线收益"设计。</p>
+        <p><span class="hl-red">诊断：这是即时制的皮、回合制的骨、放置挂机的实际体验，三者的缺点全占了。</span></p>
       </div>
     </div>
+  </div>
+
+  <!-- ================= 病灶 2 ================= -->
+  <div class="section" id="p2">
+    <div class="sec-head">
+      <span class="num">②</span>
+      <h2>决策是算术题，不是权衡：净值最大者恒为最优</h2>
+      <span class="sev s0">致命</span>
+    </div>
+
+    <div class="card">
+      <h3>为什么"选净值最大的"永远正确</h3>
+      <p>三个条件叠加，彻底杀死了选择的意义：</p>
+      <p>1. 事件选项结果 <strong>100% 确定</strong>（<span class="mono">resolveOption</span> 无任何掷骰）；2. 普通难度下<strong>所有选项效果数字直接显示</strong>（<span class="mono">shouldShowOptionEffects</span> 默认 true）；3. 结局评级 = <strong>六项指标的简单平均</strong>（<span class="mono">endings.ts calcGrade</span>），指标之间完全同质可互换。</p>
+      <p>于是"权衡"退化为口算：把每个选项的数字加起来，挑总和最大的。实测事件库中大量选项被<strong>严格支配</strong>（strictly dominated）：</p>
+
+      <h3 style="margin-top:18px;">实例：三个事件的选项净值（民意+国库+经济+稳定+外交+威望 之和）</h3>
+      <p class="mono" style="color:var(--muted); font-size:12px;">evt_strike「全国停工抗议浪潮」：</p>
+      <div class="bar-row"><span class="bl">A 答应涨薪</span><div class="bt"><div class="bf gold" style="width:30%"></div></div><span class="bv gold">净值 0</span></div>
+      <div class="bar-row"><span class="bl">B 强硬镇压</span><div class="bt"><div class="bf red" style="width:5%"></div></div><span class="bv red">净值 −25 ← 谁会选？</span></div>
+      <div class="bar-row"><span class="bl">C 折中谈判</span><div class="bt"><div class="bf green" style="width:40%"></div></div><span class="bv green">净值 +9 ← 恒优</span></div>
+      <p class="mono" style="color:var(--muted); font-size:12px; margin-top:10px;">evt_border「邻国边境军事调动」：</p>
+      <div class="bar-row"><span class="bl">A 二级战备</span><div class="bt"><div class="bf red" style="width:24%"></div></div><span class="bv red">净值 −4</span></div>
+      <div class="bar-row"><span class="bl">B 致电降温</span><div class="bt"><div class="bf green" style="width:78%"></div></div><span class="bv green">净值 +17 ← 恒优</span></div>
+      <div class="bar-row"><span class="bl">C 国际申诉</span><div class="bt"><div class="bf gold" style="width:30%"></div></div><span class="bv gold">净值 0</span></div>
+      <p class="mono" style="color:var(--muted); font-size:12px; margin-top:10px;">evt_border_peace「边境和平曙光」：</p>
+      <div class="bar-row"><span class="bl">A 全面和解</span><div class="bt"><div class="bf green" style="width:100%"></div></div><span class="bv green">净值 +36，四项全正零代价</span></div>
+      <div class="bar-row"><span class="bl">B 有限解冻</span><div class="bt"><div class="bf gray" style="width:22%"></div></div><span class="bv gray">净值 +8 ← 陪跑选项</span></div>
+      <p style="margin-top:12px;"><span class="hl-red">一周目背数字，二周目即通解。</span>唯一有掷骰的卡牌系统，13 张卡里 7 张成功率写死 100%，"悬崖战术"还是"民调高则 100% 否则 0%"的伪概率。</p>
+    </div>
+
+    <div class="card">
+      <h3>"流派"是假的：亲商 / 亲民 / 军国玩起来手感一样</h3>
+      <p>法律 7 组×3 档、政策树、改革树的骨架都在，但绝大多数条目的差异只是<strong>每月 ±1~3 点滴灌到不同刻度条</strong>。真正有独立机制钩子的只有 3 处：税率档位（改 GDP 公式）、兵役法（改兵员/失业）、军费百分比（改战备/装备/士气）。</p>
+      <p>20 个二级指标里，<span class="hl-red">真正被系统读取参与反馈回路的只有 3 个</span>（inflationRate、industrialOutput、employmentRate——最后一个还每月被失业率镜像覆写）。crimeRate、socialCohesion、forexReserves、historicalLegacy 等被事件加加减减后<strong>没有任何代码读取它们</strong>——纯仪表摆设。</p>
+      <div class="evidence">
+<span class="file">data/metrics.ts deriveSecondary()</span> —— 二级指标只是"一级指标 ± 固定偏移"：<br>
+城市支持 = <span class="k">民意+5</span> ｜ 犯罪率 = <span class="k">110−稳定</span> ｜ 通胀 = <span class="k">110−经济</span> …… <span class="bad">并非独立模拟，是换皮显示</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 病灶 3 ================= -->
+  <div class="section" id="p3">
+    <div class="sec-head">
+      <span class="num">③</span>
+      <h2>没有张力：死不了、输不掉、也没有后期压力</h2>
+      <span class="sev s0">致命</span>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h3>七层安全网，把失败焊死在地板下</h3>
+        <table>
+          <tr><th>安全网</th><th>来源</th></tr>
+          <tr><td>指标 &lt;20 每月自动 +2 回血</td><td class="mono">naturalDecay</td></tr>
+          <tr><td>政治资本每月自动 +5</td><td class="mono">advanceMonth</td></tr>
+          <tr><td>风险指数每月自动 −2</td><td class="mono">advanceMonth</td></tr>
+          <tr><td>负面事件计数每月清零</td><td class="mono">advanceMonth</td></tr>
+          <tr><td>韧性特质给负面效果打折</td><td class="mono">applyTraitScaling</td></tr>
+          <tr><td class="bad">"破产危机"三个选项全部回填国库 +15~20</td><td class="mono">emg_bankruptcy</td></tr>
+          <tr><td class="bad">"大萧条"选项 A：经济+12 民意+10</td><td class="mono">emg_depression</td></tr>
+        </table>
+        <p><span class="hl-red">危机事件本身是提款机</span>：国库越低越触发"破产"，而"破产"给你 +15~20 国库——负反馈被彻底锁死。</p>
+      </div>
+      <div class="card">
+        <h3>失败线实际不可达</h3>
+        <p>硬失败条件（<span class="mono">endings.ts checkEarlyEnd</span>）：</p>
+        <p class="mono" style="font-size:12.5px;">民意 &lt; 10 ｜ 稳定 &lt; 10 ｜ 国库 &lt; 5 且 经济 &lt; 20</p>
+        <p>而自动回血把所有指标钳在 20 的地板之上——<strong>民意要跌破 10，需要每月吃掉超过 +2 回血的持续暴击，且玩家全程不点任何正面选项</strong>。财政崩溃更是要两个条件同时长期成立，但经济 &lt;20 时每月自动 +2 拉回。</p>
+        <p style="margin-top:8px;"><strong>难度曲线：不存在。</strong>没有任何随时间/任期递增的压力参数；hard 难度只是静态的"收益 ×0.7、损失 ×1.3"。第 40 个月和第 4 个月玩起来一模一样，只是内容开始复读。</p>
+        <p><span class="hl-red">游戏体验曲线是一条温水直线：不会崩盘，没有高潮，中后期必然乏味。</span></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 病灶 4 ================= -->
+  <div class="section" id="p4">
+    <div class="sec-head">
+      <span class="num">④</span>
+      <h2>内容池撑不满 48 个月：第 12~20 个月开始复读</h2>
+      <span class="sev s1">严重</span>
+    </div>
+    <div class="card">
+      <h3>全部内容池实际条数（grep 逐文件统计）</h3>
+      <div class="bar-row"><span class="bl">主事件 events.ts</span><div class="bt"><div class="bf gold" style="width:80%"></div></div><span class="bv gold">~60-80 条(含链)</span></div>
+      <div class="bar-row"><span class="bl">环境新闻(纯观赏)</span><div class="bt"><div class="bf gray" style="width:99%"></div></div><span class="bv gray">99 条</span></div>
+      <div class="bar-row"><span class="bl">卡牌 cards.ts</span><div class="bt"><div class="bf red" style="width:13%"></div></div><span class="bv red">13 张(7张100%成功)</span></div>
+      <div class="bar-row"><span class="bl">选区信件</span><div class="bt"><div class="bf red" style="width:12%"></div></div><span class="bv red">12 封(需≥16)</span></div>
+      <div class="bar-row"><span class="bl">事件链</span><div class="bt"><div class="bf orange" style="width:12%"></div></div><span class="bv red">3 链×4 阶段</span></div>
+      <div class="bar-row"><span class="bl">跨系统事件</span><div class="bt"><div class="bf orange" style="width:11%"></div></div><span class="bv gold">11 条</span></div>
+      <div class="bar-row"><span class="bl">个人事件</span><div class="bt"><div class="bf orange" style="width:11%"></div></div><span class="bv gold">11 条</span></div>
+      <div class="bar-row"><span class="bl">命运事件(每季度1个)</span><div class="bt"><div class="bf red" style="width:10%"></div></div><span class="bv red">10 条(16个季度)</span></div>
+      <div class="bar-row"><span class="bl">NPC主动行为</span><div class="bt"><div class="bf red" style="width:10%"></div></div><span class="bv red">10 条(~24次检查)</span></div>
+      <div class="bar-row"><span class="bl">紧急事件</span><div class="bt"><div class="bf orange" style="width:8%"></div></div><span class="bv gold">8 条</span></div>
+      <div class="bar-row"><span class="bl">道德困境</span><div class="bt"><div class="bf red" style="width:7%"></div></div><span class="bv red">7 条(独立仅4)</span></div>
+      <div class="bar-row"><span class="bl">总理特质事件</span><div class="bt"><div class="bf red" style="width:7%"></div></div><span class="bv red">7 条</span></div>
+      <div class="bar-row"><span class="bl">外交事变模板</span><div class="bt"><div class="bf red" style="width:6%"></div></div><span class="bv red">6 套换国名</span></div>
+      <div class="bar-row"><span class="bl">倒计时事件</span><div class="bt"><div class="bf red" style="width:5%"></div></div><span class="bv red">5 条</span></div>
+      <p style="margin-top:12px;">需要玩家决策的独立情境合计约 <strong>150~170 个</strong>；48 个月多池并发大约产生 240~480 次事件实例——<span class="hl-red">复读期从第 12~20 个月开始</span>，命运/困境/倒计时等小池第一年内即轮完。内容量最大的池（99 条环境新闻）恰恰是<strong>不产生任何决策的观赏背景板</strong>。</p>
+    </div>
+    <div class="card">
+      <h3>防复读机制是死代码（本次审查最实锤的 Bug）</h3>
+      <div class="evidence">
+<span class="file">engine/eventVariants.ts L65-78 isSameCategoryById()</span><br>
+期望的事件 ID 前缀：<span class="k">eco_ / soc_ / dip_ / mil_ / pol_ / break_ ...</span><br>
+实际事件库的 ID 前缀：<span class="bad">evt_ / cross_ / chain_ / fate_ / cd_</span><br>
+→ 8 个分类映射中<span class="bad">只有「紧急 emg_」能命中真实数据</span>。变体后缀几乎永不触发，复读事件以原文原样反复出现。<br>
+即便命中，"变体"也只是标题贴"（新一轮）/：第二波"的文案贴纸，选项与数值原封不动。
+      </div>
+      <p>同类问题：内阁聊天是<strong>固定模板轮播</strong>（约 13 个模板，48 个月约 19 次触发，同一部长的话必然重复）；信件池 12 封 vs 需求 16 封。</p>
+    </div>
+  </div>
+
+  <!-- ================= 病灶 5 ================= -->
+  <div class="section" id="p5">
+    <div class="sec-head">
+      <span class="num">⑤</span>
+      <h2>广而薄：22 个页面，摊薄成一层仪表盘皮</h2>
+      <span class="sev s1">严重</span>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h3>页面的"可操作动词"实测（onClick 审计）</h3>
+        <table>
+          <tr><th>页面</th><th>实际动词</th><th>判定</th></tr>
+          <tr><td>外交页</td><td>1 个（"执行外交行动"）</td><td class="bad">仪表盘</td></tr>
+          <tr><td>军事页</td><td>2 个（调军费、任免将领）</td><td class="bad">仪表盘</td></tr>
+          <tr><td>议会页</td><td>4 个（提案/质询/两组行动）</td><td class="warn">半可操作</td></tr>
+          <tr><td>内阁页</td><td>6+（开会/改组/游说/私聊…）</td><td class="ok">可操作</td></tr>
+          <tr><td>国情/归因/新闻/舆论/档案/人物谱/大选/质询(无事时)</td><td>0~1 个</td><td class="bad">只读或空态</td></tr>
+        </table>
+        <p><span class="hl-red">约 1/3 的页面在绝大多数游戏时间里是只读摆设</span>。系统广度（22 页）与交互深度（每页 0~2 个动词）严重倒挂。</p>
+      </div>
+      <div class="card">
+        <h3>认知负担与内容量倒挂</h3>
+        <p>▸ 顶部导航 11 入口 + 右侧栏 5 组 11 入口 = <strong>22 个页面</strong></p>
+        <p>▸ <strong>22 个单字母快捷键</strong>（D/T/Y/P/I/G/O/M/E/S/N/F/K/L/B/R/A/X/V/C/W/H）——快捷键表本身就是复杂度失控的证据</p>
+        <p>▸ 教程 <strong>10 页 32 步</strong>，开局一次性灌输 25+ 个概念系统，期间强制暂停时间</p>
+        <p>▸ 三个小游戏全是浅层点选：发布会 = 8 问题×4 固定选项有明显最优解；质询 = 从≤4 张卡挑 1 张掷一次骰即结束；密室游说棋盘最完整但一局摸清</p>
+        <p style="margin-top:10px;"><span class="hl-red">教程要 32 步才讲得完的系统复杂度，背后只有几十条固定文案——玩家付出的学习成本远超游戏能返还的乐趣。</span></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 病灶 6 ================= -->
+  <div class="section" id="p6">
+    <div class="sec-head">
+      <span class="num">⑥</span>
+      <h2>力量倒挂：玩家的"手"是整个系统里最弱的力量</h2>
+      <span class="sev s1">严重</span>
+    </div>
+    <div class="card">
+      <h3>谁在真正驱动指标？（每月影响力对比）</h3>
+      <div class="pyramid">
+        <div class="pyr top">事件决策 ±8~15 / 次<small>×2 放大器加持，但事件是系统投喂的，35 天一检查</small></div>
+        <div class="pyr mid">系统自动漂移合力 ±5~10 / 月<small>税收+1~11、宏观传导±1~3、中央引擎±1~3、自然衰减、政策滴灌……十几条规则叠加</small></div>
+        <div class="pyr bot">玩家主动行动 +2~8 / 次<small>每月 3 点 AP，有效行动冷却 5~8 个月，多数月份只能选"+2 国库"</small></div>
+      </div>
+      <p style="margin-top:12px;">金字塔倒过来看：<span class="hl-red">玩家唯一完全自主的杠杆（日常行动）恰恰是三层力量中最弱的</span>。"中段无衰减"的设计又让"什么都不做"相当安全——于是理性玩家的最优策略是：<strong>开 5 档速度挂机，弹窗时口算选净值最大项</strong>。这正是"不好玩"的数学根源。</p>
+    </div>
+    <div class="card">
+      <h3>反馈链路断裂</h3>
+      <p>▸ 决策后果的"解释"（归因报告）要等到<strong>月末结算</strong>才生成，最长延迟 30 个游戏日，且只保留 3 个月（文档承诺 12 个月）。</p>
+      <p>▸ 归因里的"宏观引擎传导"一栏是<strong>残差打包</strong>：把所有无法分解的差值塞进一条模糊条目，玩家仍然无法追溯具体因果。</p>
+      <p>▸ 延迟后果（delayedConsequence）触发时只有一个"面对后果"单选按钮——<strong>是通知，不是决策</strong>。</p>
+      <p>▸ 事件超时惩罚发生在后台队列，快进中的玩家<strong>连"我错过了什么"都看不到</strong>。</p>
+    </div>
+  </div>
+
+  <!-- ================= 处方 ================= -->
+  <div class="section" id="rx">
+    <div class="sec-head">
+      <span class="num">℞</span>
+      <h2>处方：按优先级只做三件事</h2>
+      <span class="sev s2">行动清单</span>
+    </div>
+
+    <div class="rx p0">
+      <h3>P0 · 重做核心循环——先让玩家「有事可做」，其余免谈</h3>
+      <ul>
+        <li><b>把时间主权还给玩家：</b>加「下一天」「跳到下一事件」按钮，或者干脆改成回合制（1 回合 = 1 周），砍掉 0.7~4 秒/天的强制定时器。挂机等待是所有病灶的放大器。</li>
+        <li><b>密度对齐：</b>要么把事件检查从 35 天压到 7~10 天，要么让每次推进都必然产出一件「需要玩家表态」的东西（信件/请示/简报三选一批阅）。目标：<b>每分钟至少 1 次有意义的决策</b>。</li>
+        <li><b>拆掉 AP 垃圾桶：</b>日常行动扩到 10~15 个、冷却压到 1~2 个月、按局势解锁（罢工期间解锁「亲赴工厂」）。让 3 点 AP 每月都有真正的取舍。</li>
+        <li><b>超时惩罚必须可见：</b>事件超时前 3 天弹倒计时横幅并自动降速/暂停，「被系统选了最差项」改为「眼睁睁看着截止线逼近」。</li>
+      </ul>
+    </div>
+
+    <div class="rx p1">
+      <h3>P1 · 打破「净值最大恒为最优」——让选择重新成为权衡</h3>
+      <ul>
+        <li><b>给指标分权重或加短板惩罚：</b>结局评级从六项简单平均改为「均值 − 最低项惩罚」或按执政纲领加权，让「牺牲哪一项」成为真问题。</li>
+        <li><b>给选项加不可比代价：</b>每个选项至少绑一个非数值后果——派系关系、议席、延迟炸弹、解锁/封锁后续事件。数字能口算，立场不能。</li>
+        <li><b>引入可控随机：</b>强硬选项 = 高收益低成功率，稳妥选项 = 确定小收益；成功率受政治资本/相关部长能力修正，让 build 影响掷骰而不是只影响 +2 还是 +3。</li>
+        <li><b>撤掉答案卡：</b>普通难度默认改为模糊描述（「大幅提升民意，但财政承压」），精确数字留给简单难度或情报投资。</li>
+      </ul>
+    </div>
+
+    <div class="rx p2">
+      <h3>P2 · 修 Bug、拆安全网、砍页面</h3>
+      <ul>
+        <li><b>修死代码：</b>eventVariants.ts 的前缀映射改为匹配真实 ID（evt_/cross_/fate_/chain_/cd_），并让变体真的换选项数值，不只贴文案标签。</li>
+        <li><b>危机不能是提款机：</b>emg_bankruptcy 至少留一个「拒绝救助」的惨烈分支；&lt;20 自动回血改为「付政治资本才回血」；加一条随任期递增的压力参数（丑闻积累/党内不满），让第 40 个月比第 4 个月难。</li>
+        <li><b>先砍后补：</b>把 0~1 个动词的只读页面合并进仪表盘（22 页 → 10 页以内），教程按需触发拆成 5 步以内的分段；省下的精力全部投给事件文案——把 150 个情境写到 400+，先喂饱前 24 个月。</li>
+        <li><b>兑现文档承诺：</b>归因保留期改回 12 个月，或改百科文案；二级指标要么接入反馈回路，要么从 UI 撤下，别再摆 17 个没人读取的仪表。</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ================= 最终评级 ================= -->
+  <div class="verdict" id="verdict">
+    <h2>最 终 评 级</h2>
+    <div class="grade">42 / 100 · D+</div>
+    <p><strong>评分构成：</strong>系统架构与工程完成度 18/25（22 页面、存档、教程、成就俱全，工程上是及格的）；核心循环 4/20（挂机空转，玩家无事可做）；决策质量 5/20（确定性算术题，二周目通解）；张力与风险 3/15（七层安全网，失败线不可达）；内容量 7/15（第 12~20 月开始复读，防复读是死代码）；反馈与表达 5/5 中扣 0（历史曲线、归因、新闻的呈现层确实做得不错）。</p>
+    <p><strong>一句话诊断：</strong>这不是一个缺功能的游戏，而是一个缺「游戏」的功能合集——所有该有的系统都在，但没有一个系统在向玩家提问。玩家既不忙（每月 3 次点击）、也不怕（死不了）、也不好奇（选项答案直接印在脸上）、也不新鲜（第二年开始复读）。</p>
+    <p><strong>好消息：</strong>病根集中在「循环节奏」和「决策公式」两处，都是规则层的改动而非重写工程。按 P0 → P1 的顺序做完，这份骨架完全撑得起一个 70 分以上的游戏。</p>
   </div>
 
   <div class="footer">
-    《宰执春秋》可玩性诊断报告 v1.5.0 · 2026-07-28 · 由 TRAE 辅助生成<br>
-    本报告基于代码静态分析与设计文档评估，实际体验以玩家游玩反馈为准
+    《宰执春秋》深度病理诊断报告 · 2026-07-28<br>
+    证据来源：engine/eventEngine.ts · engine/metrics.ts · engine/endings.ts · engine/eventVariants.ts · store/gameStore.ts · data/*（events / cards / letters / emergencies / parliament …）· components/TimeControl.tsx 等全量源码<br>
+    本报告仅分析代码，未修改任何游戏文件
   </div>
 
 </div>
+
+<script>
+// 渲染病灶① 的 35 天周期条带
+(function () {
+  var strip = document.getElementById('dayStrip');
+  if (!strip) return;
+  for (var d = 1; d <= 35; d++) {
+    var cell = document.createElement('div');
+    cell.className = 'day';
+    var marks = [];
+    if (d % 25 === 0) marks.push('紧急%25');
+    if (d % 30 === 0) marks.push('入侵/特质%30');
+    if (d % 35 === 0) marks.push('主事件%35');
+    if (d === 30) marks.push('月末结算');
+    if (marks.length) {
+      cell.classList.add(d === 30 ? 'month' : 'ev');
+      cell.title = '第 ' + d + ' 天：' + marks.join(' + ');
+      cell.textContent = d;
+    } else {
+      cell.title = '第 ' + d + ' 天：空转（仅日期自增）';
+      cell.textContent = d;
+    }
+    strip.appendChild(cell);
+  }
+})();
+</script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-import type { GameEvent, GameState, NewsItem, EmergencyEvent, SecondaryMetrics, CabinetChatMessage, CabinetChatThread, DelayedConsequence, PendingEvent, PendingChain, Metrics } from '@/types/game'
+import type { GameEvent, GameState, NewsItem, EmergencyEvent, SecondaryMetrics, CabinetChatMessage, CabinetChatThread, DelayedConsequence, PendingEvent, PendingChain, Metrics, AttributionEntry, WarCommandState, FrontDeployment } from '@/types/game'
 import { EVENTS } from '@/data/events'
 import { EMERGENCIES } from '@/data/emergencies'
 import { INVASIONS } from '@/data/invasions'
@@ -1112,6 +1112,25 @@ export function advanceMonth(state: GameState): GameState {
   if (diplo.newWar && diplo.warNews) {
     next.activeWar = diplo.newWar
     next.timeSpeed = 0 // 强制暂停，等待玩家应对
+    // 初始化战争指挥面板（此前仅玩家主动宣战路径会创建，敌方宣战路径缺失导致指挥页空白）
+    const playerStrength = computeMilitaryStrength(next.military)
+    const enemyStr = diplo.newWar.enemyMilitary
+    const mkSector = (name: string, bias: number): FrontDeployment => {
+      const our = Math.max(20, Math.min(100, Math.round(playerStrength / 3 + bias)))
+      const ene = Math.max(20, Math.min(100, Math.round(enemyStr / 3 + (Math.random() * 10 - 5))))
+      const status: FrontDeployment['status'] =
+        our > ene + 8 ? 'advancing' : our < ene - 8 ? 'retreating' : our > ene ? 'holding' : 'stalemate'
+      return { sector: name, enemyStrength: ene, ourStrength: our, status }
+    }
+    const defenseCommand: WarCommandState = {
+      deployments: [mkSector('北线', 4), mkSector('南线', 0), mkSector('海岸线', -4)],
+      availableGenerals: next.military.generals
+        .filter((g) => g.active)
+        .map((g) => ({ id: g.id, name: g.name, skill: g.skill })),
+      warExhaustion: 10,
+      supplyLines: 80,
+    }
+    next.warCommand = defenseCommand
     next.news = [
       makeNews(
         next,
@@ -1133,6 +1152,160 @@ export function advanceMonth(state: GameState): GameState {
   // ===== v1.5 参数化法案：每月由各派系议员随机提出 3 条提案 =====
   // 玩家可在法律页查看并选择推动立法或放弃；下月自动刷新
   next.proposedParameterizedBills = generateMonthlyBills(3)
+
+  // ===== 内阁成员加成（原 nextMonth 迁移：受忠诚度缩放，专长且忠诚≥60 额外 +1） =====
+  const cabinetEffects: Partial<Metrics> = {}
+  {
+    const cabinetMetrics = { ...next.metrics }
+    for (const member of next.cabinet) {
+      const loyaltyFactor = member.loyalty / 100
+      for (const [key, value] of Object.entries(member.bonuses)) {
+        const metricKey = key as keyof Metrics
+        const bonus = Math.round((value ?? 0) * loyaltyFactor)
+        if (bonus !== 0) {
+          cabinetMetrics[metricKey] = clamp(cabinetMetrics[metricKey] + bonus)
+          cabinetEffects[metricKey] = (cabinetEffects[metricKey] ?? 0) + bonus
+        }
+      }
+      if (member.loyalty >= 60) {
+        const specialtyKey = member.specialty as keyof Metrics
+        if (specialtyKey in cabinetMetrics) {
+          cabinetMetrics[specialtyKey] = clamp(cabinetMetrics[specialtyKey] + 1)
+          cabinetEffects[specialtyKey] = (cabinetEffects[specialtyKey] ?? 0) + 1
+        }
+      }
+    }
+    next.metrics = cabinetMetrics
+  }
+
+  // ===== 执政疲劳：任期越久，维持民意越难（第 13 个月起递增压力，打破挂机安全区） =====
+  const fatiguePressure = next.turn > 36 ? 3 : next.turn > 24 ? 2 : next.turn > 12 ? 1 : 0
+  if (fatiguePressure > 0) {
+    next.metrics = { ...next.metrics, approval: clamp(next.metrics.approval - fatiguePressure) }
+  }
+
+  // ===== 指标历史记录（原 nextMonth 迁移，修复历史曲线永远空白的问题） =====
+  // 每月记录一条，最多保留 60 个月（5 年）用于趋势曲线图
+  next.metricHistory = [
+    ...(state.metricHistory || []).slice(-59),
+    {
+      turn: next.turn,
+      approval: next.metrics.approval,
+      treasury: next.metrics.treasury,
+      economy: next.metrics.economy,
+      stability: next.metrics.stability,
+      diplomacy: next.metrics.diplomacy,
+      prestige: next.metrics.prestige,
+      gdpTotal: next.macro?.gdp ?? 1000,
+      unemploymentRate: next.macro?.unemployment ?? 8,
+      inflationIndex: next.secondary?.inflationRate ?? 50,
+    },
+  ]
+
+  // ===== 归因报告（原 nextMonth 迁移，修复归因面板永远空白的问题） =====
+  // 把本月所有"变化来源"汇总为一份报告，保留最近 12 个月
+  {
+    const buffer = next.pendingAttributionBuffer ?? []
+    const prevM = state.metrics
+    const curM = next.metrics
+    // 自然回归归因：上月处于极端区段（>80 或 <20）的指标
+    const naturalEffects: Partial<Metrics> = {}
+    if (prevM.economy > 80 || prevM.economy < 20) {
+      naturalEffects.economy = prevM.economy > 80 ? -2 : 2
+    }
+    if (prevM.approval > 80 || prevM.approval < 20) {
+      naturalEffects.approval = prevM.approval > 80 ? -2 : 2
+    }
+    // 政策每回合效果汇总
+    const policyEffects: Partial<Metrics> = {}
+    for (const pid of next.activePolicies) {
+      const p = NATIONAL_POLICIES.find((x) => x.id === pid)
+      if (p?.perTurnEffects) {
+        for (const [k, v] of Object.entries(p.perTurnEffects)) {
+          policyEffects[k as keyof Metrics] = (policyEffects[k as keyof Metrics] ?? 0) + (v ?? 0)
+        }
+      }
+    }
+    // 改革每回合效果汇总
+    const initiativeEffects: Partial<Metrics> = {}
+    for (const ai of next.activeInitiatives) {
+      const i = INITIATIVES.find((x) => x.id === ai.initiativeId)
+      if (i?.perTurnEffects) {
+        for (const [k, v] of Object.entries(i.perTurnEffects)) {
+          initiativeEffects[k as keyof Metrics] = (initiativeEffects[k as keyof Metrics] ?? 0) + (v ?? 0)
+        }
+      }
+    }
+    const entries: AttributionEntry[] = [...buffer]
+    if (fatiguePressure > 0) {
+      entries.push({
+        source: 'natural',
+        label: `执政疲劳（第 ${next.turn} 个月，任期越久民意维持越难）`,
+        effects: { approval: -fatiguePressure },
+      })
+    }
+    if (Object.keys(naturalEffects).length > 0) {
+      entries.push({
+        source: 'natural',
+        label: '极端值自然回归（>80 或 <20 区段）',
+        effects: naturalEffects,
+      })
+    }
+    if (Object.keys(policyEffects).length > 0) {
+      entries.push({
+        source: 'policy',
+        label: `${next.activePolicies.length} 项国家政策每月效果`,
+        effects: policyEffects,
+      })
+    }
+    if (Object.keys(initiativeEffects).length > 0) {
+      entries.push({
+        source: 'initiative',
+        label: `${next.activeInitiatives.length} 项进行中改革每月效果`,
+        effects: initiativeEffects,
+      })
+    }
+    if (Object.keys(cabinetEffects).length > 0) {
+      entries.push({
+        source: 'decision',
+        label: '内阁成员忠诚度加成（≥60）',
+        effects: cabinetEffects,
+      })
+    }
+    // 宏观模拟传导：本月总变化减去已归因部分的残差，作为一条汇总条目
+    const simEffects: Partial<Metrics> = {}
+    for (const k of Object.keys(prevM) as (keyof Metrics)[]) {
+      const delta = (curM[k] ?? 0) - (prevM[k] ?? 0)
+      if (delta !== 0) {
+        const attributed =
+          (naturalEffects[k] ?? 0) + (policyEffects[k] ?? 0) +
+          (initiativeEffects[k] ?? 0) + (cabinetEffects[k] ?? 0) +
+          (k === 'approval' ? -fatiguePressure : 0) +
+          buffer.reduce((acc, e) => acc + (e.effects[k] ?? 0), 0)
+        const residual = delta - attributed
+        if (Math.abs(residual) >= 1) {
+          simEffects[k] = residual
+        }
+      }
+    }
+    if (Object.keys(simEffects).length > 0) {
+      entries.push({
+        source: 'monthly_simulation',
+        label: '宏观引擎传导（GDP↔失业↔通胀↔民意↔军费↔腐败）',
+        effects: simEffects,
+      })
+    }
+    next.monthlyAttribution = [
+      ...(state.monthlyAttribution ?? []).slice(-11),
+      {
+        turn: next.turn,
+        monthLabel: `${next.year}年${next.month}月`,
+        entries,
+      },
+    ]
+    // 清空缓冲区，下月重新累积
+    next.pendingAttributionBuffer = []
+  }
 
   return next
 }

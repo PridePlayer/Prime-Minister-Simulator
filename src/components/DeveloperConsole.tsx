@@ -72,7 +72,7 @@ export default function DeveloperConsole({ open, onClose }: DeveloperConsoleProp
       return
     }
     if (clamped === turn) {
-      setFeedback(`当前回合已经是 ${clamped}`)
+      setFeedback(`当前执政月数已经是 ${clamped}`)
       setInputValue(String(clamped))
       return
     }

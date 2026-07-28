@@ -236,7 +236,7 @@ function WarEpilogueView({
           </div>
         </div>
         <div className="rounded border border-gold/15 bg-ink-900/40 p-2 text-center">
-          <div className="font-mono text-[9px] text-parchment-200/40">持续回合</div>
+          <div className="font-mono text-[9px] text-parchment-200/40">已持续阶段</div>
           <div className="font-mono text-sm font-bold text-parchment-100">
             {war.chosenOptions.length}
           </div>

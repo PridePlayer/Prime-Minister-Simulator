@@ -54,7 +54,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'ach_centurion',
     name: '长青总理',
-    desc: '执政超过 150 个回合',
+    desc: '执政超过 150 个月',
     icon: '⏳',
     unlocked: false,
   },
