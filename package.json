@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "check": "tsc -b --noEmit",
-    "electron:build": "tsc -b && vite build && electron-builder",
+    "electron:build": "tsc -b && vite build && electron-builder --publish never",
     "electron:preview": "vite build && electron ."
   },
   "dependencies": {
