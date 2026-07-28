@@ -8,6 +8,10 @@ import MediaPage from '@/pages/MediaPage'
 import ElectionPage from '@/pages/ElectionPage'
 import CabinetPage from '@/pages/CabinetPage'
 import CabinetChatPage from '@/pages/CabinetChatPage'
+import PMProfilePage from '@/pages/PMProfilePage'
+import NpcsPage from '@/pages/NpcsPage'
+import NewsPage from '@/pages/NewsPage'
+import MonthlyReportPage from '@/pages/MonthlyReportPage'
 import type { GamePage } from '@/types/game'
 
 /** 右侧弹出面板页面标题 */
@@ -19,9 +23,14 @@ const PANEL_TITLES: Partial<Record<GamePage, string>> = {
   election: '大选',
   cabinet: '内阁名单',
   cabinet_chat: '内阁聊天',
+  pm_profile: '总理档案',
+  npcs: '人物谱',
+  news: '新闻',
+  monthly_report: '月度归因',
 }
 
-/** 右侧弹出式面板：议会/民意/内阁页面以侧栏抽屉形式展示，不再占用全屏 */
+/** 右侧弹出式面板：总理/议会/民意/内阁页面以侧栏抽屉形式展示，不再占用全屏
+ *  v1.5：总理档案与人物谱从主导航移入侧面板 */
 export default function SidePanel() {
   const sidePanelPage = useGameStore((s) => s.sidePanelPage)
   const setSidePanelPage = useGameStore((s) => s.setSidePanelPage)
@@ -35,6 +44,10 @@ export default function SidePanel() {
       case 'election': return <ElectionPage />
       case 'cabinet': return <CabinetPage />
       case 'cabinet_chat': return <CabinetChatPage />
+      case 'pm_profile': return <PMProfilePage />
+      case 'npcs': return <NpcsPage />
+      case 'news': return <NewsPage />
+      case 'monthly_report': return <MonthlyReportPage />
       default: return null
     }
   }

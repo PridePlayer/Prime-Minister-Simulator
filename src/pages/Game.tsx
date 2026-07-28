@@ -14,6 +14,7 @@ import EventPopup from '@/components/EventPopup'
 import WarEventDialog from '@/components/WarEventDialog'
 import AchievementToast from '@/components/AchievementToast'
 import StoryBeatToast from '@/components/StoryBeatToast'
+import DecisionResultToast from '@/components/DecisionResultToast'
 import HandBar from '@/components/HandBar'
 import CardEventDialog from '@/components/CardEventDialog'
 import PressConferenceMinigame from '@/components/PressConferenceMinigame'
@@ -21,7 +22,6 @@ import Tutorial from '@/components/Tutorial'
 import DeveloperConsole from '@/components/DeveloperConsole'
 import BackroomLobbyMinigame from '@/components/BackroomLobbyMinigame'
 import DashboardPage from '@/pages/DashboardPage'
-import PMProfilePage from '@/pages/PMProfilePage'
 import InitiativesPage from '@/pages/InitiativesPage'
 import TaskTreePage from '@/pages/TaskTreePage'
 import PoliciesPage from '@/pages/PoliciesPage'
@@ -31,6 +31,9 @@ import MilitaryPage from '@/pages/MilitaryPage'
 import SocietyPage from '@/pages/SocietyPage'
 import EconomyPage from '@/pages/EconomyPage'
 import EnvironmentPage from '@/pages/EnvironmentPage'
+import LawsPage from '@/pages/LawsPage'
+import CountryPage from '@/pages/CountryPage'
+import MonthlyReportPage from '@/pages/MonthlyReportPage'
 import EncyclopediaModal from '@/components/EncyclopediaModal'
 import CoalitionNegotiation from '@/pages/CoalitionNegotiation'
 import InitialCabinetSetup from '@/pages/InitialCabinetSetup'
@@ -57,7 +60,6 @@ export default function Game() {
   const renderPage = () => {
     switch (gamePage) {
       case 'dashboard': return <DashboardPage />
-      case 'pm_profile': return <PMProfilePage />
       case 'tasks': return <TaskTreePage />
       case 'policies': return <PoliciesPage />
       case 'initiatives': return <InitiativesPage />
@@ -67,6 +69,10 @@ export default function Game() {
       case 'society': return <SocietyPage />
       case 'economy': return <EconomyPage />
       case 'environment': return <EnvironmentPage />
+      case 'laws': return <LawsPage />
+      case 'country': return <CountryPage />
+      case 'monthly_report': return <MonthlyReportPage />
+      // v1.5: pm_profile 与 npcs 已移至右侧 SidePanel，不再作为全屏页面渲染
       default: return <DashboardPage />
     }
   }
@@ -209,6 +215,9 @@ export default function Game() {
 
       {/* 叙事节拍弹窗（左下角，国家氛围短文） */}
       <StoryBeatToast />
+
+      {/* 决策结果反馈飞字（右下角，决策后展示数值变化） */}
+      <DecisionResultToast />
 
       {/* 新手教程（首次进入游戏时自动弹出，可跳过） */}
       <Tutorial />

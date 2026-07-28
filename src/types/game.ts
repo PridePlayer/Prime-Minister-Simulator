@@ -39,6 +39,8 @@ export interface SecondaryMetrics {
   politicalPrestige: number
   mediaRating: number
   historicalLegacy: number
+  // 环境 → 污染指数（值越高污染越严重，越低越好）
+  pollutionIndex: number
 }
 
 export type SecondaryMetricKey = keyof SecondaryMetrics
@@ -79,6 +81,10 @@ export interface EventOption {
   chainDelay?: number
   /** 总理个人数值变化（politicalCapital/partyPrestige/rhetoric/riskIndex） */
   pmStatEffects?: Partial<PMStats>
+  /** 总理个人生活变化（familyRelation/corruption/stress） */
+  personalLifeEffects?: Partial<Pick<PersonalLife, 'familyRelation' | 'corruption' | 'stress'>>
+  /** 总理特质变化（health/charisma 等） */
+  traitEffects?: Partial<PMTraits>
   /** 选择此选项将立即结束游戏（如主动辞职） */
   endsGame?: boolean
   /** 隐藏效果预览：true=任何难度下都不显示加减分（纯盲选）；不设=按难度规则决定 */
@@ -447,6 +453,78 @@ export interface Achievement {
 /** 结局评级 */
 export type EndingGrade = 'S' | 'A' | 'B' | 'C' | 'D'
 
+/** 地方行政区长官性格特质 */
+export type GovernorTrait =
+  | 'technocrat'
+  | 'cautious'
+  | 'pragmatist'
+  | 'business_oriented'
+  | 'opportunist'
+  | 'local_chieftain'
+  | 'independent'
+  | 'conservative'
+  | 'military_background'
+  | 'disciplinarian'
+  | 'diplomat'
+
+/** 行政区 ID */
+export type RegionId =
+  | 'north_capital'
+  | 'east_industrial'
+  | 'south_commerce'
+  | 'west_frontier'
+  | 'central_granary'
+  | 'northern_forest'
+  | 'southwest_mountain'
+  | 'overseas_territory'
+
+/** 地方行政区状态 */
+export interface Region {
+  id: RegionId
+  /** 区名 */
+  name: string
+  /** 图标 */
+  icon: string
+  /** 简介 */
+  description: string
+  /** 人口（百万） */
+  population: number
+  /** 经济权重（占全国 GDP 百分比） */
+  economyWeight: number
+  /** 行政成本（每月国库支出） */
+  adminCost: number
+  /** 地理类型 */
+  geography: string
+  /** 对中央的忠诚度（0-100） */
+  loyalty: number
+  /** 该区稳定度（0-100） */
+  stability: number
+  /** 现任长官 ID */
+  governorId: string
+}
+
+/** 地方长官 */
+export interface LocalGovernor {
+  id: string
+  name: string
+  regionId: RegionId
+  age: number
+  /** 派系 */
+  faction: string
+  /** 对总理的忠诚度（0-100） */
+  loyalty: number
+  /** 行政能力（0-100） */
+  competence: number
+  /** 腐败值（0-100，越高越腐败） */
+  corruption: number
+  /** 性格特质 */
+  traits: GovernorTrait[]
+  /** 简短履历 */
+  biography: string
+  /** 倾向的政策（影响该区自动事件） */
+  preferredPolicy: string
+}
+
 /** 屏幕路由 */
 export type Screen = 'menu' | 'game' | 'ending'
 
@@ -469,8 +547,12 @@ export type GamePage =
   | 'society'
   | 'economy'
   | 'environment'
+  | 'laws'
   | 'pm_profile'
   | 'encyclopedia'
+  | 'npcs'
+  | 'country'
+  | 'monthly_report'
 
 /** 内阁聊天选项（部长发来的请求/要求，总理的回应选项） */
 export interface CabinetChatOption {
@@ -560,7 +642,14 @@ export interface TaskNode {
 /** 事件链待触发 */
 export interface PendingChain {
   chainId: string
+  /** 触发回合（基于 turn，向后兼容旧单跳链） */
   triggerTurn: number
+  /** 多阶段链专用：触发天数（基于 totalDays，用于按 delayDays 调度的多阶段链） */
+  triggerDay?: number
+  /** 多阶段链专用：已完成的阶段 ID 列表（用于 getNextChainStage 推进） */
+  completedStageIds?: string[]
+  /** 多阶段链专用：该阶段实际触发的事件 ID（对应 eventChainEvents.ts 中的 GameEvent.id） */
+  stageEventId?: string
 }
 
 /** 总理背景身份 */
@@ -1032,6 +1121,162 @@ export interface WarState {
   epilogue?: string
 }
 
+// ===================== 战争指挥系统（作战面板） =====================
+
+/** 前线部署（单一战区状态） */
+export interface FrontDeployment {
+  /** 战区名称（如"北线"、"南线"、"海岸线"） */
+  sector: string
+  /** 敌军强度 0-100 */
+  enemyStrength: number
+  /** 我军强度 0-100 */
+  ourStrength: number
+  /** 战况 */
+  status: 'holding' | 'advancing' | 'retreating' | 'stalemate'
+}
+
+/** 可调遣的将领（作战面板用，与全局 General 表分离以保持运行时简洁） */
+export interface WarCommandGeneral {
+  id: string
+  name: string
+  /** 指挥能力 0-100 */
+  skill: number
+  /** 当前分配到的战区（undefined 表示未分配） */
+  assignedSector?: string
+}
+
+/** 战争指挥状态（仅在有活跃战争时存在） */
+export interface WarCommandState {
+  /** 各战区部署情况 */
+  deployments: FrontDeployment[]
+  /** 可调遣的将领列表（从全局 MilitaryState.generals 中现役将领快照） */
+  availableGenerals: WarCommandGeneral[]
+  /** 战争疲劳度 0-100，越高越不利（持续作战、补给短缺会推高） */
+  warExhaustion: number
+  /** 补给线完整度 0-100，越高越好（受国库/军费/敌方袭扰影响） */
+  supplyLines: number
+}
+
+// ===================== 宏观经济模拟 =====================
+
+/** 宏观经济状态（每月由 simulation 引擎推算，构成系统间传导链的核心） */
+export interface MacroEconomy {
+  /** GDP 总量（十亿本国货币），初始 1000 */
+  gdp: number
+  /** GDP 年增长率 %（可为负），由经济指数/税率/贸易/战争/稳定综合决定 */
+  gdpGrowth: number
+  /** 失业率 %（0-30），反向于经济增长与工业产出 */
+  unemployment: number
+  /** 上月国库税收进账（用于经济页展示） */
+  lastTaxIncome: number
+  /** 上月军费开支（用于军事页展示） */
+  lastMilitarySpending: number
+}
+
+// ===================== 军事系统 =====================
+
+/** 军种 */
+export type MilitaryBranch = 'army' | 'navy' | 'airForce'
+
+/** 单一军种状态 */
+export interface BranchState {
+  /** 兵力（万人） */
+  personnel: number
+  /** 装备现代化程度 0-100 */
+  equipment: number
+  /** 训练战备度 0-100 */
+  readiness: number
+  /** 士气 0-100（受战争进展/军费/稳定影响） */
+  morale: number
+}
+
+/** 将领 */
+export interface General {
+  id: string
+  name: string
+  /** 统帅的军种 */
+  branch: MilitaryBranch | 'joint'
+  /** 指挥能力 0-100（战争时加成军力） */
+  skill: number
+  /** 忠诚度 0-100（过低可能触发兵谏/辞职事件） */
+  loyalty: number
+  /** 性格描述 */
+  trait: string
+  /** 年龄 */
+  age: number
+  /** 是否现役（被解职后为 false） */
+  active: boolean
+}
+
+/** 军事状态 */
+export interface MilitaryState {
+  branches: Record<MilitaryBranch, BranchState>
+  generals: General[]
+  /** 军费占 GDP 比例 %（0.5 - 8），影响国库支出与军队维持 */
+  defenseBudget: number
+  /** 上次调整军费的游戏天数（30 天冷却） */
+  lastBudgetChangeDay: number
+}
+
+// ===================== 法律系统（维多利亚3风格） =====================
+
+/** 法律档位（同组内互斥，同组同时只有一档生效） */
+export interface Law {
+  id: string
+  /** 法律名称 */
+  name: string
+  /** 法律描述 */
+  description: string
+  /** 生效期间每月效果 */
+  perTurnEffects: Partial<Metrics>
+  /** 生效期间每月二级指标效果 */
+  secondaryEffects?: Partial<SecondaryMetrics>
+  /** 立法成本 */
+  enactCost: { politicalCapital: number; treasury?: number }
+  /** 立法所需月数（议会审议期） */
+  enactMonths: number
+  /** 立法所需执政党席位下限 */
+  minSeats?: number
+  /** 是否为该组初始默认法律 */
+  isDefault?: boolean
+  /** 立法期间的叙事（审议新闻） */
+  enactNarrative?: string
+}
+
+/** 法律组 */
+export interface LawGroup {
+  id: string
+  name: string
+  icon: string
+  description: string
+  /** 该组可选法律档位 */
+  laws: Law[]
+}
+
+/** 进行中的立法 */
+export interface EnactingLaw {
+  groupId: string
+  lawId: string
+  /** 立法开始回合 */
+  startTurn: number
+  /** 总需月数 */
+  duration: number
+}
+
+// ===================== 总理个人生活 =====================
+
+/** 总理个人生活状态 */
+export interface PersonalLife {
+  /** 家庭关系 0-100（过低触发家庭危机事件） */
+  familyRelation: number
+  /** 黑金腐败 0-100（私下交易积累；过高引爆丑闻，隐藏维度） */
+  corruption: number
+  /** 心理压力 0-100（过高损害健康与决策） */
+  stress: number
+  /** 配偶姓名（用于事件文案） */
+  spouseName: string
+}
+
 /** 故事节拍所属阶段：与回合数对应 */
 export type StoryPhase = 'early' | 'mid' | 'late'
 
@@ -1150,7 +1395,7 @@ export interface GameState {
   lastBreakingNewsTurn: number
   /** 未读消息提醒（质询/信件/照会到达时） */
   unreadAlerts: {
-    type: 'debate' | 'letter' | 'note' | 'countdown' | 'breaking'
+    type: 'debate' | 'letter' | 'note' | 'countdown' | 'breaking' | 'policy' | 'task'
     title: string
     timestamp: number
   }[]
@@ -1158,6 +1403,8 @@ export interface GameState {
   playerPartyId: string | null
   /** 执政党耐心值 0-100：低于阈值时触发"以辞职相威胁"事件 */
   partyPatience: number
+  /** 已完成任务 ID（持久化，用于任务树奖励发放与回顾） */
+  completedTaskIds: string[]
   /** 上次触发执政党最后通牒的回合（防止频繁触发） */
   lastUltimatumTurn: number
   /** 内阁聊天会话列表（每个部长一个） */
@@ -1172,10 +1419,20 @@ export interface GameState {
   lastCabinetChatDay: number
   /** 外国国家列表（含外交关系） */
   countries: ForeignCountry[]
+  /** v1.5：本国地方行政区 */
+  regions?: Region[]
+  /** v1.5：地方长官列表 */
+  governors?: LocalGovernor[]
+  /** v1.5：地方行动冷却：key = `${regionId}:${actionId}`，value = 上次执行天数 */
+  regionActionCooldowns?: Record<string, number>
   /** 当前进行中的战争（同时最多一场） */
   activeWar: WarState | null
   /** 已结束的战争历史（用于结局叙事） */
   warHistory: { enemy: string; outcome: WarState['outcome']; turn: number }[]
+  /** 战争指挥状态（仅在有活跃战争时存在；无战争时为 null） */
+  warCommand: WarCommandState | null
+  /** 上次触发 NPC 主动行动检查的总天数（每 60 天检查一次） */
+  lastNpcProactiveCheckDay: number
   /** 领域行动冷却记录：key = `${domain}:${actionId}`，value = 上次执行回合 */
   domainActionCooldowns: Record<string, number>
   /** 已执行的领域行动历史（用于叙事与统计） */
@@ -1201,15 +1458,20 @@ export interface GameState {
   currentStoryBeat: StoryBeat | null
   /** 民意是否曾跌破 20（用于"不倒翁"成就判定，需持久化以跨存档保留） */
   hadLowApproval: boolean
+  /** 历史最低民意值（v1.5 新增：更精确的成就追踪，避免误判） */
+  lowestApproval: number
+  /** 民意跌破 20 后是否曾回升至 50 以上（v1.5 新增：双条件成就追踪） */
+  approvalRecoveryAchieved: boolean
   /** 税率档位：low=低税 medium=中税 high=高税 very_high=超高税；影响每月国库进账与民意/经济 */
   taxRate: 'low' | 'medium' | 'high' | 'very_high'
   /** 上次调整税率的游戏天数（防止频繁调整：每次调整至少间隔 30 天） */
   lastTaxChangeDay: number
-  /** 困难模式盲选后的结果弹窗：展示实际发生的指标变化（仅当选项效果被隐藏时设置） */
+  /** 决策结果反馈弹窗：展示本次决策的指标变化（普通模式也启用，给予玩家即时反馈） */
   decisionResult: {
     optionLabel: string
     effects: Partial<Metrics>
     pmStatEffects?: Partial<PMStats>
+    traitEffects?: Partial<PMTraits>
   } | null
   /** 本月剩余行动次数（每月在 advanceMonth 中重置为 maxActionsPerTurn；健康<30 时为 2，否则为 3） */
   actionsThisTurn: number
@@ -1223,11 +1485,97 @@ export interface GameState {
   backroomLobbyOpen: boolean
   /** 病休状态：健康值低于 30 触发后置为 true，期间行动次数受限、事件暂停 */
   healthEventActive: boolean
+  /** 宏观经济状态（GDP/增长率/失业率，每月由 simulation 引擎推算） */
+  macro: MacroEconomy
+  /** 军事状态（三军/将领/军费） */
+  military: MilitaryState
+  /** 当前生效的法律：key=法律组ID，value=法律ID */
+  activeLaws: Record<string, string>
+  /** 进行中的立法（null=无） */
+  enactingLaw: EnactingLaw | null
+  /** 总理个人生活状态 */
+  personalLife: PersonalLife
   endingReason?: string
   endingGrade?: EndingGrade
   /** 大选开始时的状态快照（用于大选阶段对比与结算） */
   electionSnapshot?: { approval: number; seats: number; term: number }
   eventsHandled: number
+  /** 指标历史记录（v1.5 新增：每月记录一次，用于趋势曲线图） */
+  metricHistory: {
+    turn: number          // 回合数
+    approval: number      // 民意
+    treasury: number      // 国库
+    economy: number       // 经济
+    stability: number    // 稳定
+    diplomacy: number    // 外交
+    prestige: number      // 声望
+    gdpTotal: number      // GDP 总量
+    unemploymentRate: number // 失业率
+    inflationIndex: number   // 通胀指数
+  }[]
+  /**
+   * v1.5：月度归因报告
+   * 每月结算时记录本月所有指标变化来源（决策/事件/政策/改革/自然衰减/跨系统传导），
+   * 让玩家明白"为什么民意掉了 8 点"，而非凭感觉猜测。
+   * 仅保留最近 3 个月（避免内存膨胀），每月轮换。
+   */
+  monthlyAttribution?: MonthlyAttributionReport[]
+  /** v1.5：本月归因缓冲区，advanceMonth 时聚合为 MonthlyAttributionReport 后清空 */
+  pendingAttributionBuffer?: AttributionEntry[]
+  /** v1.5：本月参数化法案提案（议员随机提出，每月刷新；玩家可推动立法或放弃） */
+  proposedParameterizedBills?: ParameterizedBill[]
+}
+
+/** v1.5：参数化法案提案（议题 × 强度 × 受益派系） */
+export interface ParameterizedBill {
+  /** 唯一 ID */
+  id: string
+  /** 议题类型 */
+  topic: string
+  /** 强度档位 */
+  intensity: string
+  /** 受益派系 */
+  faction: string
+  /** 派系契合度加成（true 时效果额外 +20%） */
+  hasSynergy: boolean
+  /** 法案名称 */
+  name: string
+  /** 法案描述 */
+  description: string
+  /** 每月效果 */
+  perTurnEffects: Partial<Metrics>
+  /** 二级指标效果 */
+  secondaryEffects?: Partial<SecondaryMetrics>
+  /** 立法成本 */
+  enactCost: { politicalCapital: number; treasury?: number }
+  /** 立法所需月数 */
+  enactMonths: number
+  /** 立法所需席位下限 */
+  minSeats?: number
+  /** 立法叙事 */
+  enactNarrative?: string
+}
+
+/** 月度归因报告：一条记录 = 一个月 */
+export interface MonthlyAttributionReport {
+  /** 对应回合数（与 metricHistory.turn 对齐） */
+  turn: number
+  /** 月份标题，如 "2026 年 7 月" */
+  monthLabel: string
+  /** 本月归因条目：每条 = 一个变化来源 */
+  entries: AttributionEntry[]
+}
+
+/** 单条归因：描述本月某项指标变化来自哪里 */
+export interface AttributionEntry {
+  /** 来源类型 */
+  source: 'decision' | 'event' | 'policy' | 'initiative' | 'law' | 'diplomacy' | 'war' | 'natural' | 'cross_system' | 'monthly_simulation'
+  /** 来源名称（如 "通过减税改革"、"总理电视讲话"、"经济过热回退"） */
+  label: string
+  /** 该来源对各项一级指标的贡献（正负均可） */
+  effects: Partial<Metrics>
+  /** 时间戳（本月内某天） */
+  day?: number
 }
 
 /** 存档数据 */

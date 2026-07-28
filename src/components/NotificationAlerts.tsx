@@ -9,10 +9,13 @@ const ALERT_LABEL: Record<string, string> = {
   note: '外交照会',
   countdown: '紧急倒计时',
   breaking: '突发新闻',
+  policy: '政策解锁',
+  task: '任务完成',
 }
 
-/** 重要提醒类型：只弹这些类型的提醒，其余静默 */
-const IMPORTANT_TYPES = new Set(['countdown', 'breaking', 'note'])
+/** 重要提醒类型：只弹这些类型的提醒，其余静默
+ *  policy/task 也加入，让玩家看到"改革解锁政策""任务完成"的即时反馈 */
+const IMPORTANT_TYPES = new Set(['countdown', 'breaking', 'note', 'policy', 'task'])
 
 /** 单条提醒：10 秒后自动消失 */
 function AlertItem({

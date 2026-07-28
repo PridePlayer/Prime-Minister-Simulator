@@ -5,6 +5,7 @@ import type { MetricKey, SecondaryMetricKey, Metrics, SecondaryMetrics, GamePage
 import { useState, useMemo, useEffect } from 'react'
 import DailyActionsPanel from '@/components/DailyActionsPanel'
 import NPCChatter from '@/components/NPCChatter'
+import HistoryChartsPanel from '@/components/HistoryChartsPanel'
 
 /**
  * 仪表盘页面：总理每日简报（重写版）
@@ -758,6 +759,9 @@ export default function DashboardPage() {
           <NPCChatter />
         </div>
       </div>
+
+      {/* ============ 6. 底部：历史曲线面板（v1.5 新增，可折叠） ============ */}
+      <HistoryChartsPanel />
     </div>
   )
 }

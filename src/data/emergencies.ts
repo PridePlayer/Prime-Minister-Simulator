@@ -2,6 +2,42 @@ import type { EmergencyEvent } from '@/types/game'
 
 /** 紧急事件库 — 指标降到临界点时触发 */
 export const EMERGENCIES: EmergencyEvent[] = [
+  // ===== 党内逼宫链（v1.5：失败线滑坡，民意<35 触发） =====
+  {
+    id: 'emg_party_ultimatum',
+    title: '党内元老的最后通牒',
+    category: '紧急',
+    description: '民意持续下滑已跌破 35%，执政党内部多位元老联合召开闭门会议，要求您在"改组内阁、让贤换帅、接受党魁挑战"三选一。这是滑坡的第一级警告——若继续恶化，将面临议会不信任投票与大规模抗议。',
+    trigger: { approval: 35 },
+    repeatable: true,
+    cooldown: 10,
+    options: [
+      {
+        id: 'a', label: '改组内阁，引入党外人士争取民心',
+        description: '壮士断腕',
+        effects: { approval: 12, stability: -4, prestige: -5, treasury: -4 },
+        newsTitle: '总理宣布改组内阁，多名党外人士入阁',
+        newsSummary: '政坛震动，民意暂时回升，但党内不满暗流涌动。',
+        tone: 'neutral',
+      },
+      {
+        id: 'b', label: '让贤换帅，提名党内接班人',
+        description: '体面过渡',
+        effects: { approval: 6, prestige: -8, stability: 3 },
+        newsTitle: '总理宣布让贤，提名党内接班人',
+        newsSummary: '政治过渡平稳，但您的威望受损。',
+        tone: 'neutral',
+      },
+      {
+        id: 'c', label: '拒绝元老要求，接受党魁挑战',
+        description: '背水一战',
+        effects: { approval: -5, stability: -6, prestige: 4 },
+        newsTitle: '总理拒绝党内元老要求，接受党魁挑战',
+        newsSummary: '党内裂痕公开化，政局动荡加剧。',
+        tone: 'negative',
+      },
+    ],
+  },
   // ===== 民意崩溃 =====
   {
     id: 'emg_mass_protest',

@@ -56,10 +56,10 @@ export default function SideRail() {
             className="relative"
             onMouseEnter={() => handleEnter(gIdx)}
           >
-            {/* 组图标按钮：图标 + 竖排文字标签 */}
+            {/* 组图标按钮：图标 + 横排文字标签 */}
             <button
               onClick={() => setHoveredGroup(isHovered ? null : gIdx)}
-              className={`group relative flex flex-col items-center justify-center gap-1 rounded-l-lg border-r-0 border px-2 py-2.5 transition-all duration-200 min-w-[42px] ${
+              className={`group relative flex flex-col items-center justify-center gap-0.5 rounded-l-lg border-r-0 border px-2 py-2.5 transition-all duration-200 min-w-[48px] ${
                 hasActive
                   ? 'border-gold/60 bg-gradient-to-l from-ink-800/95 to-ink-900/95 text-gold shadow-lg shadow-gold/20'
                   : 'border-gold/25 bg-ink-900/90 text-parchment-200/70 hover:bg-gradient-to-l hover:from-ink-800/95 hover:to-ink-900/90 hover:text-gold hover:border-gold/50'
@@ -67,10 +67,7 @@ export default function SideRail() {
               title={group.label}
             >
               <span className="text-base leading-none drop-shadow-sm">{group.icon}</span>
-              <span
-                className="font-serif text-[9px] font-semibold leading-none tracking-[0.15em] opacity-80"
-                style={{ writingMode: 'vertical-rl', textOrientation: 'upright' }}
-              >
+              <span className="font-serif text-[10px] font-semibold leading-none tracking-wider opacity-80 whitespace-nowrap">
                 {group.label}
               </span>
               {/* 底部金色装饰点 */}

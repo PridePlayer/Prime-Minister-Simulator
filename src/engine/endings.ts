@@ -10,11 +10,20 @@ export interface EndingCheck {
   reelected?: boolean
 }
 
-/** 检查是否触发提前下台 */
+/**
+ * v1.5 重做失败线：从"直接闷到 15 下台"改为"滑坡式逼宫链"。
+ *  - approval < 35：触发"党内元老最后通牒"紧急事件（emergencies.ts，可恢复）
+ *  - approval < 25：触发"议会不信任投票"紧急事件（可恢复）
+ *  - approval < 20：触发"百万人走上街头"紧急事件（可恢复）
+ *  - approval < 10：硬失败，强制下台（最终底线）
+ *  - treasury < 5 且 economy < 20：硬失败，财政崩溃
+ *  - stability < 10：硬失败，社会崩溃
+ * 玩家在中段（35→10）有多次机会挽回，而非直接判死。
+ */
 export function checkEarlyEnd(state: GameState): EndingCheck {
   const m = state.metrics
-  if (m.approval < 15) {
-    return { ended: true, reason: '民意支持率跌破 15%，议会通过不信任投票，您被迫下台。' }
+  if (m.approval < 10) {
+    return { ended: true, reason: '民意支持率跌破 10%，议会通过不信任投票，军方拒绝支持您的政府，您被迫下台。' }
   }
   if (m.treasury < 5 && m.economy < 20) {
     return { ended: true, reason: '国库枯竭、经济崩溃，国家陷入主权债务危机，您的政府随之倒台。' }

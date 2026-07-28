@@ -28,6 +28,8 @@ const PAGE_ICON: Record<GamePage, string> = {
   tasks: '🎯',
   policies: '🌐',
   initiatives: '📋',
+  laws: '⚖️',
+  npcs: '👥',
   diplomacy: '🤝',
   military: '⚔️',
   economy: '📈',
@@ -42,6 +44,8 @@ const PAGE_ICON: Record<GamePage, string> = {
   cabinet: '👥',
   cabinet_chat: '💬',
   encyclopedia: '📖',
+  country: '🗺️',
+  monthly_report: '📑',
 }
 
 /** 顶部待办提示条：嵌入顶部导航栏，横向排列未完成项目

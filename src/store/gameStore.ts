@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { GameState, Screen, EventOption, Achievement, SecondaryMetrics, ActiveInitiative, EmergencyEvent, GamePage, PMBackground, PMTrait, PMStats, PMTraits, GameEvent, PendingEvent, CabinetChatThread, CabinetChatMessage, CabinetChatOption, WarState } from '@/types/game'
+import type { GameState, Screen, EventOption, Achievement, SecondaryMetrics, ActiveInitiative, EmergencyEvent, GamePage, PMBackground, PMTrait, PMStats, PMTraits, GameEvent, PendingEvent, CabinetChatThread, CabinetChatMessage, CabinetChatOption, WarState, WarCommandState, WarCommandGeneral, FrontDeployment, Metrics, MetricKey, AttributionEntry } from '@/types/game'
 import { INITIAL_METRICS, deriveSecondary } from '@/data/metrics'
 import { INITIAL_CABINET, CABINET_ADVICES, REPLACEMENT_CANDIDATES } from '@/data/cabinet'
 import { ACHIEVEMENTS } from '@/data/achievements'
@@ -31,8 +31,24 @@ import {
   resolveWar,
 } from '@/data/diplomacy'
 import { DOMAIN_ACTIONS, getActionById as getDomainActionById } from '@/data/domainActions'
+import {
+  getInitialRegions,
+  getInitialGovernors,
+  REGION_ACTIONS,
+  GOVERNOR_INTERACTIONS,
+  REPLACEMENT_GOVERNOR_POOL,
+} from '@/data/regions'
+import type { RegionId } from '@/types/game'
+import { INITIAL_MACRO, INITIAL_PERSONAL_LIFE, getPlayerMilitaryStrength } from '@/engine/simulation'
+import { INITIAL_MILITARY, GENERAL_CANDIDATES } from '@/data/military'
+import { LAW_GROUPS, getDefaultLaws, findLaw } from '@/data/laws'
 import { getInitialHandCardIds, getCardById } from '@/data/cards'
 import { pickStoryBeat } from '@/data/nationalStory'
+import { TASK_TREE, findNewlyCompletedTasks } from '@/data/taskTree'
+import {
+  findEventChainDefinition,
+  getNextChainStage,
+} from '@/data/eventChainDefinitions'
 import {
   playCard as enginePlayCard,
   shouldTriggerPmqs,
@@ -110,6 +126,7 @@ function createInitialState(): GameState {
     unreadAlerts: [],
     playerPartyId: null,
     partyPatience: 100,
+    completedTaskIds: [],
     lastUltimatumTurn: 0,
     cabinetChats: [],
     activePolicies: POLICY_CATEGORIES.map((cat) => getDefaultPolicy(cat).id),
@@ -117,8 +134,14 @@ function createInitialState(): GameState {
     lastFateQuarter: 0,
     lastCabinetChatDay: 0,
     countries: INITIAL_COUNTRIES.map((c) => ({ ...c, treaties: [...c.treaties] })),
+    // v1.5：地方行政区与长官
+    regions: getInitialRegions(),
+    governors: getInitialGovernors(),
+    regionActionCooldowns: {},
     activeWar: null,
     warHistory: [],
+    warCommand: null,
+    lastNpcProactiveCheckDay: 0,
     domainActionCooldowns: {},
     domainActionHistory: [],
     eventsHandled: 0,
@@ -137,6 +160,8 @@ function createInitialState(): GameState {
     lastStoryDay: 0,
     currentStoryBeat: null,
     hadLowApproval: false,
+    lowestApproval: 100,
+    approvalRecoveryAchieved: false,
     taxRate: 'medium',
     lastTaxChangeDay: 0,
     decisionResult: null,
@@ -150,6 +175,14 @@ function createInitialState(): GameState {
     backroomLobbyOpen: false,
     // 病休状态（健康<30 触发后置 true；每月由 checkPMTraitEvent 维护）
     healthEventActive: false,
+    // 宏观经济 / 军事 / 法律 / 个人生活（系统打通新增）
+    macro: { ...INITIAL_MACRO },
+    military: JSON.parse(JSON.stringify(INITIAL_MILITARY)) as GameState['military'],
+    activeLaws: getDefaultLaws(),
+    enactingLaw: null,
+    personalLife: { ...INITIAL_PERSONAL_LIFE },
+    // v1.5：指标历史记录（每月推送一次，最多保留 60 个月/5 年）
+    metricHistory: [],
   }
 }
 
@@ -207,7 +240,7 @@ interface GameStore extends GameState {
   /** 清除 Breaking News 弹窗 */
   dismissBreakingNews: () => void
   /** 清除未读提醒 */
-  clearAlerts: (type?: 'debate' | 'letter' | 'note' | 'countdown' | 'breaking') => void
+  clearAlerts: (type?: 'debate' | 'letter' | 'note' | 'countdown' | 'breaking' | 'policy' | 'task') => void
   /** 记录 NPC 行为（用于 NPC 记忆系统） */
   recordNPCAction: (npcId: string, actionType: 'promoted' | 'betrayed' | 'dismissed' | 'helped' | 'insulted', description: string) => void
   /** 添加延迟后果 */
@@ -242,6 +275,10 @@ interface GameStore extends GameState {
   setTaxRate: (rate: 'low' | 'medium' | 'high' | 'very_high') => void
   /** 关闭当前事件弹窗（不决策，事件仍在收纳篮中） */
   closePendingEvent: () => void
+  /** v1.5：对地方行政区执行行动 */
+  executeRegionAction: (regionId: RegionId, actionId: string) => void
+  /** v1.5：与地方长官互动 */
+  interactWithGovernor: (governorId: string, interactionId: string) => void
   /** 决策待处理事件 */
   resolvePendingEvent: (instanceId: string, optionId: string) => void
   /** 玩家主动结束游戏（提前结算） */
@@ -258,6 +295,27 @@ interface GameStore extends GameState {
   dismissWarEpilogue: () => void
   /** 执行领域行动（军事/社会/经济/环境） */
   executeDomainAction: (actionId: string) => void
+  // ===================== 法律系统 =====================
+  /** 启动立法（修改某法律组为指定法律） */
+  enactLaw: (groupId: string, lawId: string) => void
+  /** v1.5：推动参数化法案（议题×强度×派系）进入立法审议期 */
+  enactParameterizedBill: (billId: string) => void
+  /** v1.5：放弃参数化法案提案 */
+  dismissParameterizedBill: (billId: string) => void
+  // ===================== 军事系统 =====================
+  /** 调整军费预算（占GDP%，30天冷却） */
+  setDefenseBudget: (value: number) => void
+  /** 任命将领（从后备池征召或复职） */
+  appointGeneral: (generalId: string) => void
+  /** 解职将领（政治代价：军方不满） */
+  dismissGeneral: (generalId: string) => void
+  // ===================== 战争指挥系统 =====================
+  /** 将将领指派到指定战区（将领技能加成该战区我军强度） */
+  assignGeneralToSector: (generalId: string, sector: string) => void
+  /** 将将领从战区撤回（解除指派） */
+  unassignGeneralFromSector: (generalId: string) => void
+  /** 增援指定战区：消耗国库提升我军强度 */
+  reinforceSector: (sector: string) => void
   // ===================== 卡牌系统 =====================
   /** 打出一张手牌至当前激活的卡牌事件槽位 */
   playCardFromHand: (handItemId: string, dossierCardId?: string) => CardPlayResult
@@ -401,6 +459,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
       : INITIAL_COUNTRIES.map((c) => ({ ...c, treaties: [...c.treaties] })),
     activeWar: state.activeWar ?? null,
     warHistory: state.warHistory ?? [],
+    // 兼容旧存档：补齐战争指挥面板与 NPC 主动行动字段
+    warCommand: state.warCommand ?? null,
+    lastNpcProactiveCheckDay: state.lastNpcProactiveCheckDay ?? 0,
+    // 兼容旧存档：补齐多阶段事件链字段（v1.5 新增；旧存档无此字段时初始化为空数组）
+    pendingChains: state.pendingChains ?? [],
     // 兼容旧存档：补齐领域行动字段
     domainActionCooldowns: state.domainActionCooldowns ?? {},
     domainActionHistory: state.domainActionHistory ?? [],
@@ -427,6 +490,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     lastTaxChangeDay: state.lastTaxChangeDay ?? 0,
     // 兼容旧存档：补齐执政党耐心值/最后通牒追踪字段（政治机制激活用）
     partyPatience: state.partyPatience ?? 100,
+    completedTaskIds: state.completedTaskIds ?? [],
     lastUltimatumTurn: state.lastUltimatumTurn ?? 0,
     // 兼容旧存档：补齐盲选结果弹窗字段
     decisionResult: state.decisionResult ?? null,
@@ -445,6 +509,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     lastStoryDay: state.lastStoryDay ?? 0,
     currentStoryBeat: state.currentStoryBeat ?? null,
     hadLowApproval: state.hadLowApproval ?? false,
+    lowestApproval: state.lowestApproval ?? 100,
+    approvalRecoveryAchieved: state.approvalRecoveryAchieved ?? false,
     // 兼容旧存档：补齐性格特质相关字段（行动力与连续负面事件计数）
     actionsThisTurn: state.actionsThisTurn ?? 0,
     consecutiveNegativeEvents: state.consecutiveNegativeEvents ?? 0,
@@ -455,6 +521,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
     backroomLobbyOpen: false,
     // 兼容旧存档：补齐病休状态字段（旧存档无此字段时按当前健康值判定）
     healthEventActive: state.healthEventActive ?? false,
+    // 兼容旧存档：补齐宏观经济/军事/法律/个人生活字段
+    macro: state.macro ?? { ...INITIAL_MACRO },
+    military: state.military ?? (JSON.parse(JSON.stringify(INITIAL_MILITARY)) as GameState['military']),
+    activeLaws: state.activeLaws ?? getDefaultLaws(),
+    enactingLaw: state.enactingLaw ?? null,
+    personalLife: state.personalLife ?? { ...INITIAL_PERSONAL_LIFE },
+    // 兼容旧存档：补齐指标历史记录字段（v1.5 新增；旧存档无此字段时初始化为空数组）
+    metricHistory: state.metricHistory ?? [],
+    // v0.3 兜底：议员提案 / NPC 记忆 / 主动行动冷却（旧存档无这些字段）
+    proposedParameterizedBills: state.proposedParameterizedBills ?? [],
+    npcMemories: state.npcMemories ?? [],
+    eventCooldowns: state.eventCooldowns ?? [],
     // 清除大选触发标志和快照（读档后不应处于大选阶段或触发大选）
     electionSnapshot: undefined,
     // 确保 gamePhase 为 playing（防止存档时处于 election/coalition 等特殊阶段）
@@ -519,6 +597,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     let next = advanceMonth(state)
 
     // 应用内阁成员加成（受忠诚度影响）
+    // 专长机制：当部长忠诚度 ≥ 60 时，其专长领域每月额外 +1（专长加成）
+    //   - 这让"财政专家"在 treasury 上比"外交专家"更高效，体现 specialty 的差异化
     let cabinetMetrics = { ...next.metrics }
     for (const member of next.cabinet) {
       const loyaltyFactor = member.loyalty / 100 // 忠诚度缩放因子
@@ -527,11 +607,158 @@ export const useGameStore = create<GameStore>((set, get) => ({
         const bonus = Math.round(value * loyaltyFactor)
         cabinetMetrics[metricKey] = clamp(cabinetMetrics[metricKey] + bonus)
       }
+      // 专长专属加成：忠诚度 ≥ 60 时，专长对应指标额外 +1
+      if (member.loyalty >= 60) {
+        const specialtyKey = member.specialty as keyof typeof cabinetMetrics
+        if (specialtyKey in cabinetMetrics) {
+          cabinetMetrics[specialtyKey] = clamp(cabinetMetrics[specialtyKey] + 1)
+        }
+      }
     }
     next.metrics = cabinetMetrics
 
     // 更新二级指标（根据一级指标推导）
     next.secondary = deriveSecondary(next.metrics)
+
+    // v1.5：每月记录一次指标历史，最多保留 60 个月（5 年）用于趋势曲线图
+    // 在大选/早退检测前记录，确保任何后续路径都保留本月数据点
+    next.metricHistory = [
+      ...(state.metricHistory || []).slice(-59),
+      {
+        turn: next.turn,
+        approval: next.metrics.approval,
+        treasury: next.metrics.treasury,
+        economy: next.metrics.economy,
+        stability: next.metrics.stability,
+        diplomacy: next.metrics.diplomacy,
+        prestige: next.metrics.prestige,
+        gdpTotal: next.macro?.gdp ?? 1000,
+        unemploymentRate: next.macro?.unemployment ?? 8,
+        inflationIndex: next.secondary?.inflationRate ?? 50,
+      },
+    ]
+
+    // v1.5：归因报告 —— 把本月所有"变化来源"汇总为一份报告，仅保留最近 3 个月
+    // 包含：玩家决策（事件/政策）、自然衰减、政策每回合效果、宏观模拟传导
+    {
+      const buffer = next.pendingAttributionBuffer ?? []
+      // 自然衰减归因：本月 economy > 80 的部分回退、< 20 的部分回升
+      const naturalEffects: Partial<Metrics> = {}
+      const prevM = state.metrics
+      const curM = next.metrics
+      // 对比状态：自然衰减后的"应有值"与实际值的差距即跨系统传导
+      // 这里用简化方式：把指标当前值的极端区段归因到自然衰减
+      if (prevM.economy > 80 || prevM.economy < 20) {
+        naturalEffects.economy = prevM.economy > 80 ? -2 : prevM.economy < 20 ? 2 : 0
+      }
+      if (prevM.approval > 80 || prevM.approval < 20) {
+        naturalEffects.approval = prevM.approval > 80 ? -2 : prevM.approval < 20 ? 2 : 0
+      }
+      // 政策每回合效果汇总
+      const policyEffects: Partial<Metrics> = {}
+      for (const pid of state.activePolicies) {
+        const p = NATIONAL_POLICIES.find((x) => x.id === pid)
+        if (p?.perTurnEffects) {
+          for (const [k, v] of Object.entries(p.perTurnEffects)) {
+            policyEffects[k as keyof Metrics] = (policyEffects[k as keyof Metrics] ?? 0) + (v ?? 0)
+          }
+        }
+      }
+      // 改革每回合效果汇总
+      const initiativeEffects: Partial<Metrics> = {}
+      for (const ai of state.activeInitiatives) {
+        const i = INITIATIVES.find((x) => x.id === ai.initiativeId)
+        if (i?.perTurnEffects) {
+          for (const [k, v] of Object.entries(i.perTurnEffects)) {
+            initiativeEffects[k as keyof Metrics] = (initiativeEffects[k as keyof Metrics] ?? 0) + (v ?? 0)
+          }
+        }
+      }
+      // 内阁加成汇总
+      const cabinetEffects: Partial<Metrics> = {}
+      for (const m of state.cabinet) {
+        if (m.specialty && m.loyalty >= 60) {
+          cabinetEffects[m.specialty as keyof Metrics] = (cabinetEffects[m.specialty as keyof Metrics] ?? 0) + 1
+        }
+      }
+      const entries: AttributionEntry[] = [
+        // 玩家本月内做的所有决策
+        ...buffer,
+      ]
+      if (Object.keys(naturalEffects).length > 0) {
+        entries.push({
+          source: 'natural',
+          label: '极端值自然回归（>80 或 <20 区段）',
+          effects: naturalEffects,
+        })
+      }
+      if (Object.keys(policyEffects).length > 0) {
+        entries.push({
+          source: 'policy',
+          label: `${state.activePolicies.length} 项国家政策每月效果`,
+          effects: policyEffects,
+        })
+      }
+      if (Object.keys(initiativeEffects).length > 0) {
+        entries.push({
+          source: 'initiative',
+          label: `${state.activeInitiatives.length} 项进行中改革每月效果`,
+          effects: initiativeEffects,
+        })
+      }
+      if (Object.keys(cabinetEffects).length > 0) {
+        entries.push({
+          source: 'decision',
+          label: '内阁成员忠诚度加成（≥60）',
+          effects: cabinetEffects,
+        })
+      }
+      // 宏观模拟传导：把本月模拟器带来的总变化（难以精确分解）作为一条汇总条目
+      // 通过对比指标在 cabinet 加成后 vs 模拟后的差距得出
+      const simEffects: Partial<Metrics> = {}
+      const beforeSim: Partial<Metrics> = {
+        approval: state.metrics.approval,
+        treasury: state.metrics.treasury,
+        economy: state.metrics.economy,
+        stability: state.metrics.stability,
+        diplomacy: state.metrics.diplomacy,
+        prestige: state.metrics.prestige,
+      }
+      // 简化：用 metric 之差作为模拟传导的近似（粗略但能让玩家意识到"自动引擎也在做事"）
+      for (const k of Object.keys(beforeSim) as (keyof Metrics)[]) {
+        const delta = (curM[k] ?? 0) - (beforeSim[k] ?? 0)
+        if (delta !== 0) {
+          // 减去已归因到自然衰减、政策、改革、内阁的部分，避免重复计算
+          const attributed =
+            (naturalEffects[k] ?? 0) + (policyEffects[k] ?? 0) +
+            (initiativeEffects[k] ?? 0) + (cabinetEffects[k] ?? 0) +
+            // 玩家决策部分（buffer 中可能已应用）
+            buffer.reduce((acc, e) => acc + (e.effects[k] ?? 0), 0)
+          const residual = delta - attributed
+          if (Math.abs(residual) >= 1) {
+            simEffects[k] = residual
+          }
+        }
+      }
+      if (Object.keys(simEffects).length > 0) {
+        entries.push({
+          source: 'monthly_simulation',
+          label: '宏观引擎传导（GDP↔失业↔通胀↔民意↔军费↔腐败）',
+          effects: simEffects,
+        })
+      }
+      const monthLabel = `${next.year}年${next.month}月`
+      next.monthlyAttribution = [
+        ...(state.monthlyAttribution ?? []).slice(-2),
+        {
+          turn: next.turn,
+          monthLabel,
+          entries,
+        },
+      ]
+      // 清空缓冲区，下月开始累积
+      next.pendingAttributionBuffer = []
+    }
 
     // 任期届满大选：暂停时间，进入大选阶段（由玩家在大选页面中完成竞选+辩论后结算）
     // 检测条件：当前 turn 已到达任期终点（turn % TERM_LENGTH === 0）
@@ -1345,13 +1572,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     let next = advanceDay(state)
 
-    // 检查待处理事件是否超时（21天未决策自动选择默认选项）
+    // v1.5：检查待处理事件是否超时——自动选择"最差"选项，让忽视有代价
+    // （此前是选默认选项，等于忽视无代价，玩家可拖延所有事件）
     const expiredEvents = next.pendingEvents.filter(
       (e) => e.deadlineDay <= next.totalDays,
     )
     if (expiredEvents.length > 0) {
       for (const ev of expiredEvents) {
-        next = resolvePendingEventInternal(next, ev.instanceId, ev.defaultOptionId, true)
+        const worstId = pickWorstOptionId(ev.options, ev.defaultOptionId)
+        next = resolvePendingEventInternal(next, ev.instanceId, worstId, true)
       }
     }
 
@@ -1418,11 +1647,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
         ],
       })
       checkAchievements(set, get, next)
+      applyTaskCompletions(set, get, next)
       return
     }
 
     set({ ...next })
     checkAchievements(set, get, next)
+    applyTaskCompletions(set, get, next)
   },
 
   setTimeSpeed: (speed) => {
@@ -1648,6 +1879,182 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   closePendingEvent: () => {
     set({ activePendingEventId: null })
+  },
+
+  // v1.5：对地方行政区执行行动（拨款/视察/换人/反贪/下放/戒严）
+  executeRegionAction: (regionId, actionId) => {
+    const state = get()
+    const region = state.regions?.find((r) => r.id === regionId)
+    if (!region) return
+    const action = REGION_ACTIONS.find((a) => a.id === actionId)
+    if (!action) return
+
+    // 政治资本不足
+    if (state.pmStats.politicalCapital < action.cost) {
+      set({
+        unreadAlerts: [
+          ...state.unreadAlerts,
+          { type: 'breaking', title: `政治资本不足：需要 ${action.cost} 点（当前 ${state.pmStats.politicalCapital}）`, timestamp: Date.now() },
+        ],
+      })
+      return
+    }
+
+    // 冷却检查
+    const cooldownKey = `${regionId}:${actionId}`
+    const lastDay = state.regionActionCooldowns?.[cooldownKey] ?? -999
+    if (state.totalDays - lastDay < action.cooldownDays) {
+      const remaining = action.cooldownDays - (state.totalDays - lastDay)
+      set({
+        unreadAlerts: [
+          ...state.unreadAlerts,
+          { type: 'breaking', title: `行动冷却中：${remaining} 天后可再次执行`, timestamp: Date.now() },
+        ],
+      })
+      return
+    }
+
+    // 应用效果
+    let next: GameState = { ...state }
+    next.pmStats = {
+      ...next.pmStats,
+      politicalCapital: clamp(next.pmStats.politicalCapital - action.cost),
+    }
+    next.regions = (next.regions ?? []).map((r) =>
+      r.id === regionId
+        ? {
+            ...r,
+            loyalty: clamp(r.loyalty + (action.effects.loyaltyDelta ?? 0)),
+            stability: clamp(r.stability + (action.effects.stabilityDelta ?? 0)),
+          }
+        : r,
+    )
+    // 撤换长官：从池中随机选派新人
+    if (actionId === 'replace_governor') {
+      const pool = REPLACEMENT_GOVERNOR_POOL
+      const candidate = pool[Math.floor(Math.random() * pool.length)]
+      const newGovernorId = `gov_new_${state.totalDays}_${Math.random().toString(36).slice(2, 6)}`
+      const newGovernor = {
+        id: newGovernorId,
+        name: candidate.name,
+        regionId,
+        age: 45 + Math.floor(Math.random() * 15),
+        faction: candidate.faction,
+        loyalty: 50,
+        competence: candidate.competence,
+        corruption: 10,
+        traits: candidate.traits,
+        biography: `${candidate.faction === 'technocrat' ? '技术官僚' : candidate.faction === 'business' ? '商界' : candidate.faction === 'military' ? '军方' : '地方'}背景，新近由中央委派。`,
+        preferredPolicy: 'strengthen_admin',
+      }
+      next.governors = [
+        ...(next.governors ?? []).filter((g) => g.regionId !== regionId),
+        newGovernor,
+      ]
+      next.regions = (next.regions ?? []).map((r) =>
+        r.id === regionId ? { ...r, governorId: newGovernorId } : r,
+      )
+    }
+    // 反贪：长官腐败下降
+    if (actionId === 'anti_corruption' && action.effects.corruptionDelta) {
+      next.governors = (next.governors ?? []).map((g) =>
+        g.regionId === regionId
+          ? {
+              ...g,
+              corruption: clamp(g.corruption + (action.effects.corruptionDelta ?? 0)),
+              loyalty: clamp(g.loyalty + (action.effects.loyaltyDelta ?? 0)),
+            }
+          : g,
+      )
+    }
+    // 应用中央指标影响
+    if (action.effects.centralEffects) {
+      next.metrics = applyEffects(next.metrics, action.effects.centralEffects)
+    }
+    // 更新冷却
+    next.regionActionCooldowns = {
+      ...(next.regionActionCooldowns ?? {}),
+      [cooldownKey]: state.totalDays,
+    }
+    // 推入归因缓冲
+    next.pendingAttributionBuffer = [
+      ...(next.pendingAttributionBuffer ?? []),
+      {
+        source: 'decision',
+        label: `${region.name}：${action.label}`,
+        effects: action.effects.centralEffects ?? {},
+        day: state.totalDays,
+      },
+    ]
+    // 新闻
+    const news = makeNews(
+      next,
+      `${region.name}：${action.label}`,
+      action.description,
+      '政治体制',
+      actionId === 'martial_law' || actionId === 'anti_corruption' ? 'negative' : 'neutral',
+    )
+    next.news = [news, ...next.news]
+    set(next)
+  },
+
+  // v1.5：与地方长官互动
+  interactWithGovernor: (governorId, interactionId) => {
+    const state = get()
+    const governor = state.governors?.find((g) => g.id === governorId)
+    if (!governor) return
+    const interaction = GOVERNOR_INTERACTIONS.find((i) => i.id === interactionId)
+    if (!interaction) return
+
+    if (state.pmStats.politicalCapital < interaction.cost) {
+      set({
+        unreadAlerts: [
+          ...state.unreadAlerts,
+          { type: 'breaking', title: `政治资本不足：需要 ${interaction.cost} 点（当前 ${state.pmStats.politicalCapital}）`, timestamp: Date.now() },
+        ],
+      })
+      return
+    }
+
+    let next: GameState = { ...state }
+    next.pmStats = {
+      ...next.pmStats,
+      politicalCapital: clamp(next.pmStats.politicalCapital - interaction.cost),
+    }
+    next.governors = (next.governors ?? []).map((g) =>
+      g.id === governorId
+        ? {
+            ...g,
+            loyalty: clamp(g.loyalty + (interaction.effects.loyaltyDelta ?? 0)),
+            corruption: clamp(g.corruption + (interaction.effects.corruptionDelta ?? 0)),
+            competence: clamp(g.competence + (interaction.effects.competenceDelta ?? 0)),
+          }
+        : g,
+    )
+    // 同步 region.loyalty（地方长官忠诚会传导到该区整体忠诚度的一半）
+    next.regions = (next.regions ?? []).map((r) =>
+      r.governorId === governorId
+        ? {
+            ...r,
+            loyalty: clamp(
+              r.loyalty + Math.floor((interaction.effects.loyaltyDelta ?? 0) / 2),
+            ),
+          }
+        : r,
+    )
+    if (interaction.effects.centralEffects) {
+      next.metrics = applyEffects(next.metrics, interaction.effects.centralEffects)
+    }
+    next.pendingAttributionBuffer = [
+      ...(next.pendingAttributionBuffer ?? []),
+      {
+        source: 'decision',
+        label: `与${governor.name}：${interaction.label}`,
+        effects: interaction.effects.centralEffects ?? {},
+        day: state.totalDays,
+      },
+    ]
+    set(next)
   },
 
   resolvePendingEvent: (instanceId, optionId) => {
@@ -2035,7 +2442,30 @@ export const useGameStore = create<GameStore>((set, get) => ({
           startTurn: state.turn,
           ended: false,
         }
-        set({ activeWar: war, timeSpeed: 0 })
+        // 初始化战争指挥状态：3 个战区，从现役将领快照可调遣列表
+        const playerStrength = getPlayerMilitaryStrength(state)
+        const enemyStr = enemy.military
+        // 我军强度按军力比例分摊到三线，敌军强度同理（略带随机扰动）
+        const mkSector = (name: string, bias: number): FrontDeployment => {
+          const our = Math.max(20, Math.min(100, Math.round(playerStrength / 3 + bias)))
+          const ene = Math.max(20, Math.min(100, Math.round(enemyStr / 3 + (Math.random() * 10 - 5))))
+          const status: FrontDeployment['status'] =
+            our > ene + 8 ? 'advancing' : our < ene - 8 ? 'retreating' : our > ene ? 'holding' : 'stalemate'
+          return { sector: name, enemyStrength: ene, ourStrength: our, status }
+        }
+        const warCommand: WarCommandState = {
+          deployments: [
+            mkSector('北线', 4),
+            mkSector('南线', 0),
+            mkSector('海岸线', -4),
+          ],
+          availableGenerals: state.military.generals
+            .filter((g) => g.active)
+            .map((g) => ({ id: g.id, name: g.name, skill: g.skill })),
+          warExhaustion: 10,
+          supplyLines: 80,
+        }
+        set({ activeWar: war, warCommand, timeSpeed: 0 })
       }
     }
   },
@@ -2068,7 +2498,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     // 若所有阶段完成 → 结算
     if (!nextStage) {
-      const result = resolveWar(warScore, war.enemyMilitary)
+      // 战争胜负使用玩家真实军力（三军状态+将领+军费），替代旧的硬编码基准
+      const playerStrength = getPlayerMilitaryStrength(state)
+      const result = resolveWar(warScore, war.enemyMilitary, playerStrength)
       const endedWar: WarState = {
         ...war,
         warScore,
@@ -2110,11 +2542,38 @@ export const useGameStore = create<GameStore>((set, get) => ({
         postMetrics.stability = clamp(postMetrics.stability - 10)
         postMetrics.economy = clamp(postMetrics.economy - 8)
       }
+      // 战争损耗：军队兵力/装备/士气根据战果削减
+      const lossFactor =
+        result.outcome === 'victory' ? 0.92 :
+        result.outcome === 'pyrrhic' ? 0.78 :
+        result.outcome === 'stalemate' ? 0.85 : 0.7
+      const postWarMilitary = {
+        ...state.military,
+        branches: {
+          army: {
+            ...state.military.branches.army,
+            personnel: Math.max(10, Math.round(state.military.branches.army.personnel * lossFactor)),
+            equipment: clamp(state.military.branches.army.equipment * lossFactor),
+            morale: clamp(state.military.branches.army.morale + (result.outcome === 'victory' ? 10 : -15)),
+          },
+          navy: {
+            ...state.military.branches.navy,
+            equipment: clamp(state.military.branches.navy.equipment * (lossFactor + 0.05)),
+            morale: clamp(state.military.branches.navy.morale + (result.outcome === 'victory' ? 8 : -12)),
+          },
+          airForce: {
+            ...state.military.branches.airForce,
+            equipment: clamp(state.military.branches.airForce.equipment * (lossFactor + 0.03)),
+            morale: clamp(state.military.branches.airForce.morale + (result.outcome === 'victory' ? 8 : -12)),
+          },
+        },
+      }
       // Breaking News 冷却：距上次弹窗至少 2 个月
       const canShowBreakingWar = state.turn - state.lastBreakingNewsTurn >= 2
       set({
         metrics: postMetrics,
         countries,
+        military: postWarMilitary,
         activeWar: endedWar,
         warHistory: [...state.warHistory, { enemy: war.enemyCountryName, outcome: result.outcome, turn: state.turn }],
         news: [
@@ -2164,7 +2623,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     })
   },
 
-  dismissWarEpilogue: () => set({ activeWar: null }),
+  dismissWarEpilogue: () => set({ activeWar: null, warCommand: null }),
 
   executeDomainAction: (actionId) => {
     const state = get()
@@ -2268,6 +2727,378 @@ export const useGameStore = create<GameStore>((set, get) => ({
         tone: action.news.tone,
       } : null,
       ...(canShowBreakingDom ? { lastBreakingNewsTurn: state.turn } : {}),
+    })
+  },
+
+  // ===================== 法律系统 =====================
+  enactLaw: (groupId, lawId) => {
+    const state = get()
+    if (state.enactingLaw) return // 同时只能推进一项立法
+    const group = LAW_GROUPS.find((g) => g.id === groupId)
+    const law = group?.laws.find((l) => l.id === lawId)
+    if (!group || !law) return
+    // 已是当前法律
+    if (state.activeLaws[groupId] === lawId) return
+    // 席位门槛
+    if (law.minSeats && state.parliament.rulingPartySeats < law.minSeats) return
+    // 成本校验
+    if (state.pmStats.politicalCapital < law.enactCost.politicalCapital) return
+    if (law.enactCost.treasury && state.metrics.treasury < law.enactCost.treasury) return
+
+    const pmStats = { ...state.pmStats }
+    pmStats.politicalCapital = clamp(pmStats.politicalCapital - law.enactCost.politicalCapital)
+    const metrics = { ...state.metrics }
+    if (law.enactCost.treasury) {
+      metrics.treasury = clamp(metrics.treasury - law.enactCost.treasury)
+    }
+
+    set({
+      pmStats,
+      metrics,
+      enactingLaw: {
+        groupId,
+        lawId,
+        startTurn: state.turn,
+        duration: law.enactMonths,
+      },
+      news: [
+        {
+          id: `news_law_start_${Date.now()}`,
+          timestamp: `${state.year}年${state.month}月`,
+          title: `政府提交《${law.name}》草案`,
+          summary: law.enactNarrative ?? `${group.name}改革正式启动：${law.description}。预计议会审议需 ${law.enactMonths} 个月。`,
+          category: '议会',
+          tone: 'neutral',
+        },
+        ...state.news,
+      ],
+      unreadAlerts: [
+        ...state.unreadAlerts,
+        { type: 'policy', title: `立法启动：《${law.name}》`, timestamp: Date.now() },
+      ],
+    })
+  },
+
+  // v1.5：推动参数化法案进入审议期
+  enactParameterizedBill: (billId) => {
+    const state = get()
+    if (state.enactingLaw) return // 同时只能推进一项立法
+    const bill = state.proposedParameterizedBills?.find((b) => b.id === billId)
+    if (!bill) return
+    // 席位门槛
+    if (bill.minSeats && state.parliament.rulingPartySeats < bill.minSeats) {
+      set({
+        unreadAlerts: [
+          ...state.unreadAlerts,
+          { type: 'breaking', title: `席位不足：需要 ${bill.minSeats} 席（当前 ${state.parliament.rulingPartySeats}）`, timestamp: Date.now() },
+        ],
+      })
+      return
+    }
+    // 政治资本
+    if (state.pmStats.politicalCapital < bill.enactCost.politicalCapital) {
+      set({
+        unreadAlerts: [
+          ...state.unreadAlerts,
+          { type: 'breaking', title: `政治资本不足：需要 ${bill.enactCost.politicalCapital} 点`, timestamp: Date.now() },
+        ],
+      })
+      return
+    }
+    // 国库
+    if (bill.enactCost.treasury && state.metrics.treasury < bill.enactCost.treasury) {
+      set({
+        unreadAlerts: [
+          ...state.unreadAlerts,
+          { type: 'breaking', title: `国库不足：需要 ${bill.enactCost.treasury} 点`, timestamp: Date.now() },
+        ],
+      })
+      return
+    }
+    const pmStats = { ...state.pmStats, politicalCapital: clamp(state.pmStats.politicalCapital - bill.enactCost.politicalCapital) }
+    const metrics = { ...state.metrics }
+    if (bill.enactCost.treasury) {
+      metrics.treasury = clamp(metrics.treasury - bill.enactCost.treasury)
+    }
+    set({
+      pmStats,
+      metrics,
+      enactingLaw: {
+        groupId: 'parameterized_proposals',
+        lawId: bill.id,
+        startTurn: state.turn,
+        duration: bill.enactMonths,
+      },
+      news: [
+        {
+          id: `news_pbill_${Date.now()}`,
+          timestamp: `${state.year}年${state.month}月`,
+          title: `政府推动《${bill.name}》`,
+          summary: bill.enactNarrative ?? `${bill.description}。预计议会审议需 ${bill.enactMonths} 个月。`,
+          category: '议会',
+          tone: 'neutral',
+        },
+        ...state.news,
+      ],
+      unreadAlerts: [
+        ...state.unreadAlerts,
+        { type: 'policy', title: `立法启动：《${bill.name}》`, timestamp: Date.now() },
+      ],
+    })
+  },
+
+  // v1.5：放弃参数化法案提案
+  dismissParameterizedBill: (billId) => {
+    const state = get()
+    set({
+      proposedParameterizedBills: (state.proposedParameterizedBills ?? []).filter((b) => b.id !== billId),
+    })
+  },
+
+  // ===================== 军事系统 =====================
+  setDefenseBudget: (value) => {
+    const state = get()
+    // 30 天冷却
+    if (state.military.lastBudgetChangeDay !== 0 && state.totalDays - state.military.lastBudgetChangeDay < 30) return
+    const clamped = Math.max(0.5, Math.min(8, value))
+    const old = state.military.defenseBudget
+    set({
+      military: {
+        ...state.military,
+        defenseBudget: clamped,
+        lastBudgetChangeDay: state.totalDays,
+      },
+      news: [
+        {
+          id: `news_milbudget_${Date.now()}`,
+          timestamp: `${state.year}年${state.month}月`,
+          title: `国防预算调整：${old.toFixed(1)}% → ${clamped.toFixed(1)}% GDP`,
+          summary:
+            clamped > old
+              ? '国防部获得追加预算，各军种战备提升计划启动，财政部警告赤字压力上升。'
+              : '政府削减国防开支以充实国库，军方高层私下表达强烈不满。',
+          category: '军事',
+          tone: 'neutral',
+        },
+        ...state.news,
+      ],
+    })
+  },
+
+  appointGeneral: (generalId) => {
+    const state = get()
+    // 从后备池或已解职将领中任命
+    const candidate =
+      GENERAL_CANDIDATES.find((g) => g.id === generalId) ??
+      state.military.generals.find((g) => g.id === generalId && !g.active)
+    if (!candidate) return
+    if (state.military.generals.some((g) => g.id === generalId && g.active)) return
+    if (state.pmStats.politicalCapital < 8) return
+
+    const pmStats = { ...state.pmStats, politicalCapital: clamp(state.pmStats.politicalCapital - 8) }
+    const generals = state.military.generals.some((g) => g.id === generalId)
+      ? state.military.generals.map((g) => (g.id === generalId ? { ...g, active: true } : g))
+      : [...state.military.generals, { ...candidate, active: true }]
+    set({
+      pmStats,
+      military: { ...state.military, generals },
+      news: [
+        {
+          id: `news_gen_appoint_${Date.now()}`,
+          timestamp: `${state.year}年${state.month}月`,
+          title: `${candidate.name}出任${candidate.branch === 'army' ? '陆军' : candidate.branch === 'navy' ? '海军' : candidate.branch === 'airForce' ? '空军' : '联合参谋'}要职`,
+          summary: `国防部发布任命令：${candidate.name}（${candidate.trait}）正式就职。`,
+          category: '军事',
+          tone: 'neutral',
+        },
+        ...state.news,
+      ],
+    })
+  },
+
+  dismissGeneral: (generalId) => {
+    const state = get()
+    const general = state.military.generals.find((g) => g.id === generalId && g.active)
+    if (!general) return
+    if (state.pmStats.politicalCapital < 10) return
+
+    const pmStats = { ...state.pmStats, politicalCapital: clamp(state.pmStats.politicalCapital - 10) }
+    const generals = state.military.generals.map((g) =>
+      g.id === generalId ? { ...g, active: false } : g,
+    )
+    // 解职高威望将领损害稳定与军队士气
+    const metrics = { ...state.metrics }
+    const military = { ...state.military, generals }
+    if (general.skill >= 70) {
+      metrics.stability = clamp(metrics.stability - 3)
+      metrics.prestige = clamp(metrics.prestige - 2)
+      for (const key of ['army', 'navy', 'airForce'] as const) {
+        military.branches = {
+          ...military.branches,
+          [key]: { ...military.branches[key], morale: clamp(military.branches[key].morale - 4) },
+        }
+      }
+    }
+    set({
+      pmStats,
+      metrics,
+      military,
+      news: [
+        {
+          id: `news_gen_dismiss_${Date.now()}`,
+          timestamp: `${state.year}年${state.month}月`,
+          title: `${general.name}被解除军职`,
+          summary: `总理签署解职令，${general.name}（${general.trait}）黯然去职。军中议论纷纷。`,
+          category: '军事',
+          tone: 'negative',
+        },
+        ...state.news,
+      ],
+    })
+  },
+
+  // ===================== 战争指挥系统 =====================
+  assignGeneralToSector: (generalId, sector) => {
+    const state = get()
+    if (!state.warCommand) return
+    // 校验：将领在可调遣列表中
+    const gen = state.warCommand.availableGenerals.find((g) => g.id === generalId)
+    if (!gen) return
+    // 校验：战区存在
+    const deployment = state.warCommand.deployments.find((d) => d.sector === sector)
+    if (!deployment) return
+
+    // 若该将领已分配到其他战区，先从原战区撤回（移除其技能加成）
+    let deployments = state.warCommand.deployments.map((d) => {
+      // 找到该将领此前分配的战区，扣除其技能带来的加成
+      const prev = state.warCommand!.availableGenerals.find((g) => g.id === generalId && g.assignedSector === d.sector)
+      if (prev) {
+        return {
+          ...d,
+          ourStrength: clamp(d.ourStrength - Math.round(prev.skill * 0.25)),
+        }
+      }
+      return d
+    })
+    // 若目标战区已有其他将领，先撤换（移除旧将领加成）
+    const occupied = state.warCommand.availableGenerals.find(
+      (g) => g.assignedSector === sector && g.id !== generalId,
+    )
+    if (occupied) {
+      deployments = deployments.map((d) =>
+        d.sector === sector
+          ? { ...d, ourStrength: clamp(d.ourStrength - Math.round(occupied.skill * 0.25)) }
+          : d,
+      )
+    }
+    // 应用新将领加成到目标战区
+    const bonus = Math.round(gen.skill * 0.25)
+    deployments = deployments.map((d) =>
+      d.sector === sector ? { ...d, ourStrength: clamp(d.ourStrength + bonus) } : d,
+    )
+    // 重算战区状态
+    deployments = deployments.map((d) => {
+      const status: FrontDeployment['status'] =
+        d.ourStrength > d.enemyStrength + 8 ? 'advancing' :
+        d.ourStrength < d.enemyStrength - 8 ? 'retreating' :
+        d.ourStrength > d.enemyStrength ? 'holding' : 'stalemate'
+      return { ...d, status }
+    })
+    // 更新将领分配：被撤换的将领回到未分配，新将领分配到目标战区
+    const availableGenerals: WarCommandGeneral[] = state.warCommand.availableGenerals.map((g) => {
+      if (g.id === generalId) return { ...g, assignedSector: sector }
+      if (occupied && g.id === occupied.id) return { ...g, assignedSector: undefined }
+      return g
+    })
+
+    set({
+      warCommand: { ...state.warCommand, deployments, availableGenerals },
+      news: [
+        {
+          id: `news_war_assign_${Date.now()}`,
+          timestamp: `${state.year}年${state.month}月`,
+          title: `${gen.name}受命指挥${sector}`,
+          summary: `战时调令：${gen.name}进驻${sector}司令部，统揽该方向作战事宜。`,
+          category: '军事',
+          tone: 'neutral',
+        },
+        ...state.news,
+      ],
+    })
+  },
+
+  unassignGeneralFromSector: (generalId) => {
+    const state = get()
+    if (!state.warCommand) return
+    const gen = state.warCommand.availableGenerals.find((g) => g.id === generalId)
+    if (!gen || !gen.assignedSector) return
+
+    // 从该战区移除将领技能加成
+    const bonus = Math.round(gen.skill * 0.25)
+    let deployments = state.warCommand.deployments.map((d) =>
+      d.sector === gen.assignedSector
+        ? { ...d, ourStrength: clamp(d.ourStrength - bonus) }
+        : d,
+    )
+    // 重算战区状态
+    deployments = deployments.map((d) => {
+      const status: FrontDeployment['status'] =
+        d.ourStrength > d.enemyStrength + 8 ? 'advancing' :
+        d.ourStrength < d.enemyStrength - 8 ? 'retreating' :
+        d.ourStrength > d.enemyStrength ? 'holding' : 'stalemate'
+      return { ...d, status }
+    })
+    const availableGenerals = state.warCommand.availableGenerals.map((g) =>
+      g.id === generalId ? { ...g, assignedSector: undefined } : g,
+    )
+
+    set({
+      warCommand: { ...state.warCommand, deployments, availableGenerals },
+    })
+  },
+
+  reinforceSector: (sector) => {
+    const state = get()
+    if (!state.warCommand) return
+    const deployment = state.warCommand.deployments.find((d) => d.sector === sector)
+    if (!deployment) return
+    // 增援代价：国库 -6，政治资本 -3；提升该战区我军强度 +10
+    if (state.metrics.treasury < 6) return
+    if (state.pmStats.politicalCapital < 3) return
+
+    const metrics = { ...state.metrics, treasury: clamp(state.metrics.treasury - 6) }
+    const pmStats = { ...state.pmStats, politicalCapital: clamp(state.pmStats.politicalCapital - 3) }
+    // 补给线略受影响（增援消耗后勤）
+    const supplyLines = clamp(state.warCommand.supplyLines - 3)
+    // 战争疲劳度略增
+    const warExhaustion = clamp(state.warCommand.warExhaustion + 2)
+    let deployments = state.warCommand.deployments.map((d) =>
+      d.sector === sector ? { ...d, ourStrength: clamp(d.ourStrength + 10) } : d,
+    )
+    // 重算战区状态
+    deployments = deployments.map((d) => {
+      const status: FrontDeployment['status'] =
+        d.ourStrength > d.enemyStrength + 8 ? 'advancing' :
+        d.ourStrength < d.enemyStrength - 8 ? 'retreating' :
+        d.ourStrength > d.enemyStrength ? 'holding' : 'stalemate'
+      return { ...d, status }
+    })
+
+    set({
+      metrics,
+      pmStats,
+      warCommand: { ...state.warCommand, deployments, supplyLines, warExhaustion },
+      news: [
+        {
+          id: `news_war_reinforce_${Date.now()}`,
+          timestamp: `${state.year}年${state.month}月`,
+          title: `${sector}增援到位`,
+          summary: `后勤部门紧急调拨预备队与物资开赴${sector}，前线将士士气大振。`,
+          category: '军事',
+          tone: 'positive',
+        },
+        ...state.news,
+      ],
     })
   },
 
@@ -2732,6 +3563,44 @@ export function generateCabinetChatMessage(state: GameState): {
   return { ministerId: member.id, message }
 }
 
+/**
+ * v1.5：选取"最差"选项——自动决策时让忽视有代价。
+ * 计算每个选项的一级指标效果总和（approval/treasury/economy/stability/diplomacy/prestige），
+ * 返回总和最低（最负面）的选项 ID。若所有选项效果相同，回退到默认选项。
+ */
+function pickWorstOptionId(
+  options: Array<{ id: string; effects?: Partial<Metrics> }>,
+  defaultOptionId: string,
+): string {
+  if (!options || options.length === 0) return defaultOptionId
+  let worstId = options[0].id
+  let worstSum = Infinity
+  for (const opt of options) {
+    const effects = opt.effects ?? {}
+    const sum =
+      (effects.approval ?? 0) +
+      (effects.treasury ?? 0) +
+      (effects.economy ?? 0) +
+      (effects.stability ?? 0) +
+      (effects.diplomacy ?? 0) +
+      (effects.prestige ?? 0)
+    if (sum < worstSum) {
+      worstSum = sum
+      worstId = opt.id
+    }
+  }
+  // 若最差选项与默认选项效果相同（所有选项效果一致），仍使用默认以保留叙事连贯
+  return worstId
+}
+
+/**
+ * v1.5：事件效果放大系数。
+ * 此前事件效果多为 ±3~5，决策感弱。v1.5 将事件决策效果放大至 ±8~15 范围，
+ * 让单次决策有真实分量。仅对待处理事件（pendingEvents）生效，
+ * 不影响改革/政策/法律等系统的效果应用。
+ */
+const EVENT_EFFECT_AMPLIFIER = 2
+
 /** 内部函数：解决一个待处理事件并返回新状态 */
 function resolvePendingEventInternal(
   state: GameState,
@@ -2745,8 +3614,14 @@ function resolvePendingEventInternal(
   const option = event.options.find((o) => o.id === optionId) ?? event.options[0]
   if (!option) return state
 
+  // v1.5：放大事件效果（±3~5 → ±6~10，配合性格特质缩放可达 ±8~15）
+  const amplifiedEffects: Partial<Metrics> = {}
+  for (const key of Object.keys(option.effects ?? {}) as MetricKey[]) {
+    amplifiedEffects[key] = (option.effects?.[key] ?? 0) * EVENT_EFFECT_AMPLIFIER
+  }
+
   // 应用总理性格特质缩放（果断、韧性）→ 得到缩放后的 effects 与"是否净负面"标志
-  const { scaledEffects, isNegative } = applyTraitScaling(option.effects, state)
+  const { scaledEffects, isNegative } = applyTraitScaling(amplifiedEffects, state)
 
   // 应用一级指标效果（困难模式缩放：加成打折、扣分放大）
   const metrics = applyEffects(state.metrics, scaledEffects, state.difficulty)
@@ -2760,6 +3635,34 @@ function resolvePendingEventInternal(
     }
   }
 
+  // 应用 PMStats 效果（修复：此前只展示未真正生效）
+  const pmStats = { ...state.pmStats }
+  if (option.pmStatEffects) {
+    const ps = option.pmStatEffects
+    pmStats.politicalCapital = clamp(pmStats.politicalCapital + (ps.politicalCapital ?? 0))
+    pmStats.partyPrestige = clamp(pmStats.partyPrestige + (ps.partyPrestige ?? 0))
+    pmStats.rhetoric = clamp(pmStats.rhetoric + (ps.rhetoric ?? 0))
+    pmStats.riskIndex = clamp(pmStats.riskIndex + (ps.riskIndex ?? 0))
+  }
+
+  // 应用总理特质效果（health/charisma 等）
+  const pmTraitsNumeric = { ...state.pmTraitsNumeric }
+  if (option.traitEffects) {
+    for (const [k, v] of Object.entries(option.traitEffects)) {
+      const key = k as keyof typeof pmTraitsNumeric
+      pmTraitsNumeric[key] = clamp(pmTraitsNumeric[key] + (v ?? 0))
+    }
+  }
+
+  // 应用个人生活效果（家庭/黑金/压力）
+  const personalLife = { ...(state.personalLife ?? { familyRelation: 70, corruption: 5, stress: 30, spouseName: '苏婉' }) }
+  if (option.personalLifeEffects) {
+    const pl = option.personalLifeEffects
+    personalLife.familyRelation = clamp(personalLife.familyRelation + (pl.familyRelation ?? 0))
+    personalLife.corruption = clamp(personalLife.corruption + (pl.corruption ?? 0))
+    personalLife.stress = clamp(personalLife.stress + (pl.stress ?? 0))
+  }
+
   // 更新连续负面事件计数：净负面 ++，否则重置为 0（韧性机制依赖此计数）
   const consecutiveNegativeEvents = isNegative
     ? state.consecutiveNegativeEvents + 1
@@ -2770,6 +3673,9 @@ function resolvePendingEventInternal(
     ...state,
     metrics,
     secondary,
+    pmStats,
+    pmTraitsNumeric,
+    personalLife,
     consecutiveNegativeEvents,
     pendingEvents: state.pendingEvents.filter((e) => e.instanceId !== instanceId),
     activePendingEventId: state.activePendingEventId === instanceId ? null : state.activePendingEventId,
@@ -2778,13 +3684,56 @@ function resolvePendingEventInternal(
   }
   nextState = recordEventTrigger(nextState, event.eventId)
 
-  // 处理事件链
+  // v1.5：推入月度归因缓冲区，让玩家明白本月指标变化来自哪次决策
+  // 自动决策时标注"自动"，让玩家意识到忽视的代价
+  const attributionLabel = isAuto
+    ? `自动决策（忽视超时）：${event.title}`
+    : `${event.title}：${option.label}`
+  nextState.pendingAttributionBuffer = [
+    ...(nextState.pendingAttributionBuffer ?? []),
+    {
+      source: 'event',
+      label: attributionLabel,
+      effects: scaledEffects,
+      day: nextState.totalDays,
+    },
+  ]
+
+  // 处理事件链（支持旧式单跳链与新式多阶段链）
   if (option.chainId) {
-    const delay = option.chainDelay ?? 3
-    nextState.pendingChains = [
-      ...nextState.pendingChains,
-      { chainId: option.chainId, triggerTurn: state.turn + delay },
-    ]
+    const def = findEventChainDefinition(option.chainId)
+    if (def) {
+      // 多阶段链：根据当前事件 ID 推断已完成的阶段，调度下一阶段
+      let completedStageIds: string[] = []
+      const currentStageIdx = def.stages.findIndex(
+        (s) => s.eventId === event.eventId,
+      )
+      if (currentStageIdx >= 0) {
+        completedStageIds = def.stages
+          .slice(0, currentStageIdx + 1)
+          .map((s) => s.stageId)
+      }
+      const nextStage = getNextChainStage(option.chainId, completedStageIds, nextState)
+      if (nextStage) {
+        nextState.pendingChains = [
+          ...nextState.pendingChains,
+          {
+            chainId: option.chainId,
+            triggerTurn: nextState.turn,
+            triggerDay: nextState.totalDays + nextStage.delayDays,
+            stageEventId: nextStage.eventId,
+            completedStageIds: [...completedStageIds, nextStage.stageId],
+          },
+        ]
+      }
+    } else {
+      // 旧式单跳链：chainId 即事件 ID
+      const delay = option.chainDelay ?? 3
+      nextState.pendingChains = [
+        ...nextState.pendingChains,
+        { chainId: option.chainId, triggerTurn: state.turn + delay },
+      ]
+    }
   }
 
   // 激活 addDelayedConsequence 机制：选项可携带延迟后果
@@ -2832,6 +3781,17 @@ function resolvePendingEventInternal(
   // 丑闻类事件触发突击新闻发布会（非自动决策时 50% 概率）
   if (!isAuto) {
     tryTriggerPressConference(nextState, event.eventId)
+  }
+
+  // 决策结果反馈：所有模式下都设置，让玩家看到本次决策的数值变化
+  // 自动决策（超时）时不弹结果，避免无意义打扰
+  if (!isAuto) {
+    nextState.decisionResult = {
+      optionLabel: option.label,
+      effects: scaledEffects,
+      pmStatEffects: option.pmStatEffects,
+      traitEffects: (option as { traitEffects?: Partial<GameState['pmTraitsNumeric']> }).traitEffects,
+    }
   }
 
   return nextState
@@ -3032,11 +3992,25 @@ function checkAchievements(
   get: () => GameStore,
   state: GameState,
 ) {
-  // 追踪民意是否曾跌破 20（持久化到存档）
-  const hadLowApproval = state.hadLowApproval || state.metrics.approval < 20
-  if (hadLowApproval !== state.hadLowApproval) {
-    set({ hadLowApproval })
+  // v1.5 重构不倒翁成就追踪：使用 lowestApproval + approvalRecoveryAchieved 双标志
+  // 避免旧版 hadLowApproval 在某些边界条件下被误设为 true 的问题
+  const currentApproval = state.metrics.approval
+  const prevLowest = state.lowestApproval ?? 100
+  const lowestApproval = Math.min(prevLowest, currentApproval)
+  const hadLowApproval = state.hadLowApproval || currentApproval < 20
+
+  // 只有在民意曾跌破 20 后，才检查是否回升到 50 以上
+  const approvalRecoveryAchieved =
+    state.approvalRecoveryAchieved ||
+    (hadLowApproval && currentApproval >= 50)
+
+  const stateUpdates: Partial<GameState> = {}
+  if (lowestApproval !== prevLowest) stateUpdates.lowestApproval = lowestApproval
+  if (hadLowApproval !== state.hadLowApproval) stateUpdates.hadLowApproval = hadLowApproval
+  if (approvalRecoveryAchieved !== state.approvalRecoveryAchieved) {
+    stateUpdates.approvalRecoveryAchieved = approvalRecoveryAchieved
   }
+  if (Object.keys(stateUpdates).length > 0) set(stateUpdates)
 
   const updated: Achievement[] = state.achievements.map((a) => {
     if (a.unlocked) return a
@@ -3063,13 +4037,74 @@ function checkAchievements(
         unlock = state.term >= 2
         break
       case 'ach_survivor':
-        // 修复：必须民意真正跌破 20 后回升到 50 以上才算扭转局势
-        unlock = hadLowApproval && state.metrics.approval >= 50
+        // v1.5 修复：必须民意真正跌破 20（lowestApproval < 20）后回升到 50 以上
+        // 使用 approvalRecoveryAchieved 双标志确保时序正确（先跌后涨）
+        unlock = approvalRecoveryAchieved && lowestApproval < 20
         break
     }
     return unlock ? { ...a, unlocked: true } : a
   })
   set({ achievements: updated })
+}
+
+/**
+ * 任务完成检查：扫描任务树，对未在 completedTaskIds 中的任务检测完成条件。
+ * 新完成的任务：
+ *   1. 应用 rewards.effects 到 metrics、rewards.pmStatEffects 到 pmStats
+ *   2. rewards.achievements 与 achievementId 调用 unlockAchievement
+ *   3. 写入 completedTaskIds
+ *   4. push unreadAlerts 提示玩家"任务完成 +X"
+ *
+ * 在 advanceOneDay 末尾调用，紧跟 checkAchievements 之后。
+ */
+function applyTaskCompletions(
+  set: (partial: Partial<GameStore>) => void,
+  get: () => GameStore,
+  state: GameState,
+) {
+  const newly = findNewlyCompletedTasks(state)
+  if (newly.length === 0) return
+
+  const metrics = { ...state.metrics }
+  const pmStats = { ...state.pmStats }
+  const completedTaskIds = [...state.completedTaskIds]
+  const unreadAlerts = [...state.unreadAlerts]
+  const achievementsToUnlock: string[] = []
+
+  for (const task of newly) {
+    completedTaskIds.push(task.id)
+    if (task.rewards?.effects) {
+      for (const [k, v] of Object.entries(task.rewards.effects)) {
+        const key = k as keyof typeof metrics
+        metrics[key] = clamp(metrics[key] + (v ?? 0))
+      }
+    }
+    if (task.rewards?.pmStatEffects) {
+      const ps = task.rewards.pmStatEffects
+      pmStats.politicalCapital = clamp(pmStats.politicalCapital + (ps.politicalCapital ?? 0))
+      pmStats.partyPrestige = clamp(pmStats.partyPrestige + (ps.partyPrestige ?? 0))
+      pmStats.rhetoric = clamp(pmStats.rhetoric + (ps.rhetoric ?? 0))
+      pmStats.riskIndex = clamp(pmStats.riskIndex + (ps.riskIndex ?? 0))
+    }
+    if (task.rewards?.achievements) {
+      for (const aid of task.rewards.achievements) achievementsToUnlock.push(aid)
+    }
+    if (task.achievementId) {
+      achievementsToUnlock.push(task.achievementId)
+    }
+    unreadAlerts.push({
+      type: 'task',
+      title: `任务完成：${task.title}`,
+      timestamp: Date.now(),
+    })
+  }
+
+  set({ metrics, pmStats, completedTaskIds, unreadAlerts })
+
+  // 触发成就解锁（独立 set，避免重复刷状态）
+  for (const aid of achievementsToUnlock) {
+    get().unlockAchievement(aid)
+  }
 }
 
 /** 获取内阁建议（基于当前最弱指标） */

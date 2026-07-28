@@ -63,14 +63,26 @@ export function applyEffects(
   return next
 }
 
-/** 每回合自然衰减：国库 -1，其余向 50 缓慢回归（±1） */
+/**
+ * v1.5 重做：每回合自然衰减。
+ *  - 国库：始终 -1（财政持续消耗）
+ *  - 其余 5 项一级指标：仅在极端值（<20 或 >80）时回归，±2/月
+ *    中段（20–80）不衰减——玩家的努力不会被"自动没收"
+ *    这让改革/决策的成果能真正保留，而非被基线漂移抹平
+ */
 export function naturalDecay(metrics: Metrics): Metrics {
   const next: Metrics = { ...metrics }
   next.treasury = clamp(next.treasury - 1)
   const keys: MetricKey[] = ['approval', 'economy', 'stability', 'diplomacy', 'prestige']
   for (const k of keys) {
-    if (next[k] > 50) next[k] = clamp(next[k] - 1)
-    else if (next[k] < 50) next[k] = clamp(next[k] + 1)
+    if (next[k] > 80) {
+      // 过热区域：缓慢回落至 80（±2/月），避免数值溢出
+      next[k] = clamp(next[k] - 2)
+    } else if (next[k] < 20) {
+      // 危险区域：缓慢回升至 20（±2/月），给玩家喘息空间
+      next[k] = clamp(next[k] + 2)
+    }
+    // 20–80 之间：不衰减，保留玩家决策成果
   }
   return next
 }

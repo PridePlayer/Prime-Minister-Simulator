@@ -153,13 +153,18 @@ function CountryDetailPanel({ country, atWar }: { country: ForeignCountry; atWar
     if (action.treasuryCost && metrics.treasury < action.treasuryCost) {
       return { ok: false, reason: `国库不足（需 ${action.treasuryCost}）` }
     }
-    const cooldownLeft = action.cooldown - (turn - country.lastActionTurn)
-    if (cooldownLeft > 0) {
-      // 冷却 ≥999 视为"每局限一次"行动（如宣战）
-      if (action.cooldown >= 999) {
-        return { ok: false, reason: '本局已使用（每国仅一次）' }
+    // v1.5 修复：lastActionTurn === 0 表示从未使用过，不应触发冷却判定
+    // 旧逻辑直接计算 cooldownLeft = cooldown - (turn - 0) = cooldown - turn，
+    // 导致 cooldown=999 的"每国一次"行动在从未使用时也显示"本局已使用"
+    if (country.lastActionTurn > 0) {
+      const cooldownLeft = action.cooldown - (turn - country.lastActionTurn)
+      if (cooldownLeft > 0) {
+        // 冷却 ≥999 视为"每局限一次"行动（如宣战）
+        if (action.cooldown >= 999) {
+          return { ok: false, reason: '本局已使用（每国仅一次）' }
+        }
+        return { ok: false, reason: `冷却中（剩 ${cooldownLeft} 月）` }
       }
-      return { ok: false, reason: `冷却中（剩 ${cooldownLeft} 月）` }
     }
     return { ok: true }
   }

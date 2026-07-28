@@ -1,4 +1,4 @@
-import type { GameEvent, GameState, NewsItem, EmergencyEvent, SecondaryMetrics, CabinetChatMessage, CabinetChatThread, DelayedConsequence, PendingEvent, Metrics } from '@/types/game'
+import type { GameEvent, GameState, NewsItem, EmergencyEvent, SecondaryMetrics, CabinetChatMessage, CabinetChatThread, DelayedConsequence, PendingEvent, PendingChain, Metrics } from '@/types/game'
 import { EVENTS } from '@/data/events'
 import { EMERGENCIES } from '@/data/emergencies'
 import { INVASIONS } from '@/data/invasions'
@@ -15,6 +15,18 @@ import { deriveRelationLevel } from '@/data/diplomacy'
 import { generateMonthlyAmbientNews } from '@/data/ambientNews'
 import { checkPMTraitEvent, getTraitEventInstanceId } from '@/data/pmTraitEvents'
 import { shouldShowOptionEffects, getScaledEffects } from '@/engine/metrics'
+import { runMonthlySimulation, runCentralAnalysis, INITIAL_MACRO, INITIAL_PERSONAL_LIFE } from '@/engine/simulation'
+import { INITIAL_MILITARY, computeMilitaryStrength } from '@/data/military'
+import { LAW_GROUPS, getDefaultLaws } from '@/data/laws'
+import { runMonthlyDiplomacy } from '@/data/diplomaticIncidents'
+import { getCrossSystemEventWeight } from '@/data/crossSystemEvents'
+import { pickNPCProactiveAction } from '@/data/npcProactiveActions'
+import {
+  findEventChainDefinition,
+  getNextChainStage,
+} from '@/data/eventChainDefinitions'
+import { applyVariantIfRepeated } from '@/engine/eventVariants'
+import { generateMonthlyBills } from '@/data/parameterizedBills'
 
 /** 事件默认冷却天数 */
 export const EVENT_COOLDOWN_DAYS = 240
@@ -126,13 +138,22 @@ export function cleanupExpiredCooldowns(state: GameState): GameState {
 /** 从事件库中挑选下一个事件
  *  注意：返回 chain 事件时，会通过副作用从 state.pendingChains 中移除该条目，
  *  避免同一事件链被反复触发。
+ *
+ *  支持两种事件链：
+ *  1. 旧式单跳链：pendingChain.chainId 直接对应事件 ID，按 triggerTurn（回合）调度
+ *  2. 新式多阶段链：pendingChain.chainId 对应 EventChainDefinition，
+ *     实际触发的事件 ID 存于 pendingChain.stageEventId，按 triggerDay（天）调度
  */
 export function pickEvent(state: GameState): GameEvent | null {
-  // 优先检查事件链
-  const pendingChainIdx = state.pendingChains.findIndex((c) => c.triggerTurn <= state.turn)
+  // 优先检查事件链：同时支持 triggerTurn（旧）与 triggerDay（新）两种调度
+  const pendingChainIdx = state.pendingChains.findIndex(
+    (c) => c.triggerTurn <= state.turn || (c.triggerDay !== undefined && c.triggerDay <= state.totalDays),
+  )
   if (pendingChainIdx >= 0) {
     const pendingChain = state.pendingChains[pendingChainIdx]
-    const chainEvent = EVENTS.find((e) => e.id === pendingChain.chainId)
+    // 多阶段链：使用 stageEventId 查找实际事件
+    const eventIdToFind = pendingChain.stageEventId ?? pendingChain.chainId
+    const chainEvent = EVENTS.find((e) => e.id === eventIdToFind)
     if (chainEvent) {
       // 立即从 pendingChains 中移除，防止重复触发
       state.pendingChains = [
@@ -171,7 +192,10 @@ export function pickEvent(state: GameState): GameEvent | null {
   })
   if (available.length === 0) return null
 
-  // 加权随机：道德过低增加丑闻/腐败类事件权重
+  // 加权随机：v1.5 全面按当前局势加权（而非纯日历定时投放）
+  // 1. 丑闻/腐败：道德过低时提权
+  // 2. 跨系统事件：按 getCrossSystemEventWeight 动态加权
+  // 3. 普通事件：按事件分类匹配当前最差指标提权（低 economy → 经济类提权等）
   const weights = available.map((e) => {
     let w = e.weight ?? 1
     const isScandalEvent = e.id.includes('scandal') || e.id.includes('corruption')
@@ -182,6 +206,15 @@ export function pickEvent(state: GameState): GameEvent | null {
         w *= 1.5
       }
     }
+    // 跨系统联动事件：根据当前世界状态动态加权
+    // 状态匹配时大幅提权（×5~×8），否则保持基础权重
+    if (e.id.startsWith('cross_')) {
+      w *= getCrossSystemEventWeight(e.id, state)
+    }
+    // v1.5：分类 ↔ 当前指标匹配加权
+    // 某指标处于紧张区（<40 或 >75）时，对应分类的事件权重提升
+    // 让玩家在"该领域出问题"时频繁看到该领域的事件，而非日历式轮播
+    w *= getSituationalCategoryWeight(e.category, state)
     return w
   })
   const total = weights.reduce((a, b) => a + b, 0)
@@ -191,6 +224,112 @@ export function pickEvent(state: GameState): GameEvent | null {
     if (r <= 0) return available[i]
   }
   return available[available.length - 1]
+}
+
+/**
+ * v1.5：按事件分类与当前局势的匹配度返回权重倍数。
+ * 指标越靠近危险区，对应分类的事件权重越高（最高 ×2.5）。
+ * 与事件本身的状态无关，只看"该领域现在是不是有问题"。
+ */
+function getSituationalCategoryWeight(category: string, state: GameState): number {
+  const m = state.metrics
+  switch (category) {
+    case '经济':
+      // economy < 40 → 经济危机感强，多发经济事件
+      if (m.economy < 30) return 2.5
+      if (m.economy < 45) return 1.7
+      if (m.economy > 75) return 0.6 // 经济过热时少发经济类，多发社会/环境类
+      return 1
+    case '外交':
+      if (m.diplomacy < 30) return 2.2
+      if (m.diplomacy < 45) return 1.6
+      return 1
+    case '军事':
+      // 战争中或稳定过低时多发军事事件
+      if (state.activeWar && !state.activeWar.ended) return 2.0
+      if (m.stability < 35) return 1.8
+      return 1
+    case '社会':
+      if (m.stability < 30) return 2.5
+      if (m.stability < 45) return 1.6
+      if (m.approval < 35) return 1.5 // 民怨沸腾时社会事件增多
+      return 1
+    case '环境':
+      // 经济过热（>75）时环境代价显现，环境事件提权
+      if (m.economy > 75) return 1.8
+      if (state.secondary?.pollutionIndex > 60) return 1.6
+      return 1
+    case '政治体制':
+      // 党内威望低 / 民意低时，政治体制类事件多发（逼宫、党内挑战）
+      if (state.pmStats.partyPrestige < 40) return 2.0
+      if (m.approval < 40) return 1.6
+      return 1
+    case '突发':
+    case '紧急':
+      // 紧急事件不受局势加权影响，保持基础权重
+      return 1
+    default:
+      return 1
+  }
+}
+
+/**
+ * 当玩家选择携带 chainId 的选项时，调度下一阶段事件。
+ *
+ * 行为分支：
+ * 1. 若 chainId 命中 EventChainDefinition（多阶段链）：
+ *    - 若当前事件 ID 在链的某个 stage.eventId 中，则推进到下一阶段
+ *      （按 stage.delayDays 调度，受 stage.condition 控制）
+ *    - 否则视为链的首次触发，调度第一阶段
+ * 2. 否则（旧式单跳链）：按原逻辑调度，chainId 即事件 ID，triggerTurn = turn + delay
+ *
+ * @param currentEventId 当前正被解决的事件 ID（用于多阶段链判断当前位置）
+ * @param chainId 选项携带的 chainId
+ * @param chainDelay 选项携带的 chainDelay（仅旧式链使用）
+ * @returns 新的 pendingChains 条目，或 null（链终止/无效）
+ */
+function scheduleChainEntry(
+  state: GameState,
+  currentEventId: string | undefined,
+  chainId: string,
+  chainDelay: number | undefined,
+): PendingChain | null {
+  const def = findEventChainDefinition(chainId)
+  if (!def) {
+    // 旧式单跳链：chainId 即事件 ID
+    const delay = chainDelay ?? 3
+    return {
+      chainId,
+      triggerTurn: state.turn + delay,
+    }
+  }
+
+  // 多阶段链：根据当前事件 ID 推断已完成的阶段
+  let completedStageIds: string[] = []
+  if (currentEventId) {
+    const currentStageIdx = def.stages.findIndex(
+      (s) => s.eventId === currentEventId,
+    )
+    if (currentStageIdx >= 0) {
+      completedStageIds = def.stages
+        .slice(0, currentStageIdx + 1)
+        .map((s) => s.stageId)
+    }
+  }
+
+  const nextStage = getNextChainStage(chainId, completedStageIds, state)
+  if (!nextStage) {
+    // 链终止（无下一阶段或条件不满足）
+    return null
+  }
+
+  return {
+    chainId,
+    triggerTurn: state.turn, // 旧字段保持兼容，不影响 pickEvent（triggerDay 优先）
+    triggerDay: state.totalDays + nextStage.delayDays,
+    stageEventId: nextStage.eventId,
+    completedStageIds: [...completedStageIds, nextStage.stageId],
+  }
 }
 
 /** 检查是否触发紧急事件 */
@@ -297,18 +436,17 @@ export function resolveOption(
     ? [...state.resolvedEventIds, event.id]
     : state.resolvedEventIds
 
-  // 处理事件链
+  // 处理事件链（支持旧式单跳链与新式多阶段链）
   let pendingChains = [...state.pendingChains]
   if (option.chainId) {
-    const delay = option.chainDelay ?? 3
-    pendingChains.push({
-      chainId: option.chainId,
-      triggerTurn: state.turn + delay,
-    })
+    const entry = scheduleChainEntry(state, event.id, option.chainId, option.chainDelay)
+    if (entry) pendingChains.push(entry)
   }
 
-  // 清理已过期的事件链（triggerTurn <= 当前回合视为已过期）
-  pendingChains = pendingChains.filter((c) => c.triggerTurn > state.turn)
+  // 清理已过期的事件链（triggerTurn <= 当前回合 或 triggerDay <= 当前天数 视为已过期）
+  pendingChains = pendingChains.filter(
+    (c) => c.triggerTurn > state.turn && (c.triggerDay === undefined || c.triggerDay > state.totalDays),
+  )
 
   // 如果是紧急事件，记录触发
   let triggeredEmergencyIds = [...state.triggeredEmergencyIds]
@@ -336,15 +474,14 @@ export function resolveOption(
     eventsHandled: state.eventsHandled + 1,
   }
 
-  // 困难模式盲选结果：若该选项效果被隐藏，决策后弹窗展示实际发生的数值变化
-  if (!shouldShowOptionEffects(option, state.difficulty)) {
-    nextState.decisionResult = {
-      optionLabel: option.label,
-      effects: getScaledEffects(scaledEffects, state.difficulty),
-      pmStatEffects: option.pmStatEffects,
-    }
-  } else {
-    nextState.decisionResult = null
+  // 决策结果反馈：所有模式下都设置，让玩家看到本次决策的真实数值变化
+  // 困难模式展示的是已经缩放（加成打折、扣分放大）的真实效果
+  // 普通模式展示的是选项定义中的基础效果（即玩家决策前看到的数字）
+  nextState.decisionResult = {
+    optionLabel: option.label,
+    effects: getScaledEffects(scaledEffects, state.difficulty),
+    pmStatEffects: option.pmStatEffects,
+    traitEffects: (option as { traitEffects?: Partial<GameState['pmTraitsNumeric']> }).traitEffects,
   }
 
   // 应用 PMStats 变化（政治资本、党内威望、辩论技巧、风险指数）
@@ -442,6 +579,8 @@ export function advanceMonth(state: GameState): GameState {
   const remainingInitiatives: typeof activeInitiatives = []
   let countries = [...state.countries]
   const completionNews: NewsItem[] = []
+  // 改革完成时解锁政策推送的红点提醒
+  const newPolicyAlerts: { type: 'policy'; title: string; timestamp: number }[] = []
   // 改革完成时触发的延迟后果（模块联动）
   const completionDelayed: DelayedConsequence[] = []
   for (const ai of activeInitiatives) {
@@ -458,7 +597,7 @@ export function advanceMonth(state: GameState): GameState {
         }
         completedInitiatives.push(ai.initiativeId)
 
-        // 改革↔政策树联动：改革完成时解锁指定政策，并推送新闻
+        // 改革↔政策树联动：改革完成时解锁指定政策，并推送新闻 + 红点提醒
         if (initiative.unlocksPolicies && initiative.unlocksPolicies.length > 0) {
           for (const pid of initiative.unlocksPolicies) {
             const unlockedPolicy = NATIONAL_POLICIES.find((p) => p.id === pid)
@@ -470,6 +609,12 @@ export function advanceMonth(state: GameState): GameState {
                 summary: `「${initiative.name}」的完成为政策树开辟了新分支。现在可在政策中心启用「${unlockedPolicy.name}」：${unlockedPolicy.description}`,
                 category: '改革',
                 tone: 'positive',
+              })
+              // 推送 policy 红点，提醒玩家去政策中心查看新解锁的政策
+              newPolicyAlerts.push({
+                type: 'policy' as const,
+                title: `新政策已解锁：${unlockedPolicy.name}`,
+                timestamp: Date.now(),
               })
             }
           }
@@ -558,6 +703,11 @@ export function advanceMonth(state: GameState): GameState {
   // 外交改革完成时追加新闻
   if (completionNews.length > 0) {
     next.news = [...completionNews, ...state.news]
+  }
+
+  // 改革解锁政策时追加 policy 红点提醒
+  if (newPolicyAlerts.length > 0) {
+    next.unreadAlerts = [...newPolicyAlerts, ...state.unreadAlerts]
   }
 
   // ===== 月度环境新闻（背景新闻流）=====
@@ -828,13 +978,280 @@ export function advanceMonth(state: GameState): GameState {
     next.currentEvent = null
   }
 
+  // ===== 宏观模拟：GDP/失业率/军费/跨系统传导/个人生活（系统打通的核心） =====
+  // 兼容旧存档：若缺少新字段则先补默认值
+  if (!next.macro) next.macro = { ...INITIAL_MACRO }
+  if (!next.military) next.military = JSON.parse(JSON.stringify(INITIAL_MILITARY))
+  if (!next.activeLaws) next.activeLaws = getDefaultLaws()
+  if (next.enactingLaw === undefined) next.enactingLaw = null
+  if (!next.personalLife) next.personalLife = { ...INITIAL_PERSONAL_LIFE }
+
+  const simInput: GameState = {
+    ...next,
+    macro: next.macro,
+    military: next.military,
+    personalLife: next.personalLife,
+    activeLaws: next.activeLaws,
+  }
+  const sim = runMonthlySimulation(simInput)
+  next.macro = sim.macro
+  next.metrics = sim.metrics
+  next.secondary = sim.secondary
+  next.military = sim.military
+  next.personalLife = sim.personalLife
+  if (sim.extraNews.length > 0) {
+    next.news = [...sim.extraNews, ...next.news]
+  }
+
+  // ===== v1.5 中央运算引擎：地方行政区 → 中央传导 =====
+  const central = runCentralAnalysis(next)
+  next.regions = central.regions
+  next.governors = central.governors
+  if (Object.keys(central.metricsDelta).length > 0) {
+    next.metrics = applyEffects(next.metrics, central.metricsDelta)
+  }
+  if (Object.keys(central.secondaryDelta).length > 0) {
+    next.secondary = {
+      ...next.secondary,
+      ...Object.fromEntries(
+        Object.entries(central.secondaryDelta).map(([k, v]) => [
+          k,
+          clamp((next.secondary as any)[k] + (v ?? 0)),
+        ]),
+      ),
+    }
+  }
+  if (central.extraNews.length > 0) {
+    next.news = [...central.extraNews, ...next.news]
+  }
+  if (central.attributionEntries.length > 0) {
+    next.pendingAttributionBuffer = [
+      ...(next.pendingAttributionBuffer ?? []),
+      ...central.attributionEntries,
+    ]
+  }
+
+  // ===== 立法进度推进 =====
+  if (next.enactingLaw) {
+    const { groupId, lawId, startTurn, duration } = next.enactingLaw
+    if (next.turn - startTurn >= duration) {
+      // v1.5：先查静态法律组，再查参数化法案池
+      const group = LAW_GROUPS.find((g) => g.id === groupId)
+      const law = group?.laws.find((l) => l.id === lawId)
+      const pbill = !group ? next.proposedParameterizedBills?.find((b) => b.id === lawId) : undefined
+      if (group && law) {
+        // 静态法律：切换该组生效档位
+        next.activeLaws = { ...next.activeLaws, [groupId]: lawId }
+        next.news = [
+          makeNews(
+            next,
+            `《${law.name}》正式生效`,
+            `经过${duration}个月的审议与博弈，${group.name}迎来变革：${law.description}`,
+            '议会',
+            'neutral',
+          ),
+          ...next.news,
+        ]
+        next.unreadAlerts = [
+          ...next.unreadAlerts,
+          { type: 'policy', title: `新法生效：《${law.name}》`, timestamp: Date.now() },
+        ]
+      } else if (pbill) {
+        // 参数化法案：一次性应用 perTurnEffects（按月数 *duration 倍率）
+        const burstMultiplier = duration
+        const burstEffects: Partial<typeof next.metrics> = {}
+        for (const [k, v] of Object.entries(pbill.perTurnEffects)) {
+          const key = k as keyof typeof next.metrics
+          burstEffects[key] = (v ?? 0) * burstMultiplier
+        }
+        next.metrics = applyEffects(next.metrics, burstEffects)
+        // 从提案池移除（已通过）
+        next.proposedParameterizedBills = (next.proposedParameterizedBills ?? []).filter((b) => b.id !== lawId)
+        next.news = [
+          makeNews(
+            next,
+            `《${pbill.name}》正式通过`,
+            `经过${duration}个月的审议，议会以多数票通过该法案。${pbill.description}`,
+            '议会',
+            'neutral',
+          ),
+          ...next.news,
+        ]
+        next.unreadAlerts = [
+          ...next.unreadAlerts,
+          { type: 'policy', title: `法案通过：《${pbill.name}》`, timestamp: Date.now() },
+        ]
+        // 归因
+        next.pendingAttributionBuffer = [
+          ...(next.pendingAttributionBuffer ?? []),
+          {
+            source: 'law',
+            label: `通过《${pbill.name}》（${pbill.intensity} · ${pbill.faction}）`,
+            effects: burstEffects,
+            day: state.totalDays,
+          },
+        ]
+      }
+      next.enactingLaw = null
+    }
+  }
+
+  // ===== 外交动态化：关系漂移 + 边境危机事件 + 敌国主动宣战 =====
+  const diplo = runMonthlyDiplomacy(next, computeMilitaryStrength(next.military))
+  next.countries = diplo.countries
+  if (diplo.newPendingEvent) {
+    next.pendingEvents = [...next.pendingEvents, diplo.newPendingEvent]
+    if (!next.activePendingEventId) {
+      next.activePendingEventId = diplo.newPendingEvent.instanceId
+    }
+    next.unreadAlerts = [
+      ...next.unreadAlerts,
+      { type: 'breaking', title: `外交危机：${diplo.newPendingEvent.title}`, timestamp: Date.now() },
+    ]
+  }
+  if (diplo.newWar && diplo.warNews) {
+    next.activeWar = diplo.newWar
+    next.timeSpeed = 0 // 强制暂停，等待玩家应对
+    next.news = [
+      makeNews(
+        next,
+        `${diplo.warNews}向我方宣战！`,
+        `${diplo.warNews}军队越过边境发动突然进攻，其政府正式宣战。全国进入紧急状态，总理府彻夜灯火通明。`,
+        '军事',
+        'negative',
+      ),
+      ...next.news,
+    ]
+    next.metrics = {
+      ...next.metrics,
+      stability: clamp(next.metrics.stability - 6),
+      approval: clamp(next.metrics.approval + 3), // 聚旗效应
+      diplomacy: clamp(next.metrics.diplomacy - 8),
+    }
+  }
+
+  // ===== v1.5 参数化法案：每月由各派系议员随机提出 3 条提案 =====
+  // 玩家可在法律页查看并选择推动立法或放弃；下月自动刷新
+  next.proposedParameterizedBills = generateMonthlyBills(3)
+
   return next
+}
+
+/**
+ * NPC 主动行动检查：每 60 天检查一次（由 lastNpcProactiveCheckDay 追踪）。
+ * NPC 根据自身状态/世界状态主动发起来电、拜访或公开声明，
+ * 不再被动等待事件触发。详见 src/data/npcProactiveActions.ts。
+ *
+ * 触发后包装成 PendingEvent 加入队列，玩家在 14 天内决策。
+ * 同一 NPC 在 240 天冷却期内不会再次主动行动。
+ *
+ * 注：此函数在 advanceDay 开头调用，由 eventEngine 而非 gameStore 持有，
+ * 以避免 gameStore ↔ eventEngine 的循环依赖。
+ */
+export function checkNPCProactiveActions(state: GameState): GameState {
+  if (
+    state.totalDays - (state.lastNpcProactiveCheckDay ?? 0) < 60 ||
+    state.pendingEvents.length >= 3
+  ) {
+    return state
+  }
+
+  const action = pickNPCProactiveAction(state)
+  // 无论是否触发都更新检查时间，避免每天重复扫描
+  if (!action) {
+    return { ...state, lastNpcProactiveCheckDay: state.totalDays }
+  }
+
+  const instanceId = `npcProactive_${action.npcId}_${state.totalDays}`
+  const defaultOptionId = action.options[0]?.id ?? ''
+  const typeLabel =
+    action.type === 'call' ? '来电' :
+    action.type === 'visit' ? '拜访' : '公开声明'
+
+  const next: GameState = {
+    ...state,
+    lastNpcProactiveCheckDay: state.totalDays,
+    pendingEvents: [
+      ...state.pendingEvents,
+      {
+        instanceId,
+        eventId: `npcProactive_${action.npcId}`,
+        title: action.title,
+        description: action.description,
+        category: '政治体制',
+        options: action.options.map((o) => ({
+          id: o.id,
+          label: o.label,
+          effects: o.effects,
+          newsTitle: o.newsTitle,
+          newsSummary: o.newsSummary,
+          tone: 'neutral' as const,
+        })),
+        isEmergency: false,
+        triggeredDay: state.totalDays,
+        deadlineDay: state.totalDays + 14,
+        defaultOptionId,
+        once: false,
+        chainInfo: undefined,
+      },
+    ],
+    // 记录冷却（240 天内同一 NPC 不再主动行动）
+    eventCooldowns: [
+      ...state.eventCooldowns.filter(
+        (c) => c.eventId !== `npcProactive_${action.npcId}`,
+      ),
+      {
+        eventId: `npcProactive_${action.npcId}`,
+        triggeredDay: state.totalDays,
+        cooldownDays: 240,
+      },
+    ],
+    unreadAlerts: [
+      ...state.unreadAlerts,
+      {
+        type: 'breaking' as const,
+        title: `NPC${typeLabel}：${action.title}`,
+        timestamp: Date.now(),
+      },
+    ],
+  }
+  if (!next.activePendingEventId) {
+    next.activePendingEventId = instanceId
+  }
+  return next
+}
+
+/**
+ * v1.5：按事件类别返回不同的等待天数（7–42 天不等）。
+ * 外交/军事类事件需快速响应，经济/社会类可从容处理。
+ * 让不同类型事件有紧迫感差异，而非千篇一律的 21 天。
+ */
+function getEventWindowByCategory(category: string): number {
+  switch (category) {
+    case '外交':
+    case '军事':
+      return 7   // 紧迫：7 天内必须决策
+    case '政治体制':
+      return 14  // 较紧：14 天
+    case '经济':
+      return 21  // 中等：21 天
+    case '社会':
+    case '环境':
+      return 28  // 从容：28 天
+    case '文化':
+    case '科技':
+      return 35  // 宽松：35 天
+    default:
+      return 42  // 通用：42 天（给玩家足够时间处理）
+  }
 }
 
 /** 按日推进（即时制）：每天推进，月末时执行月度结算
  * 事件不再阻塞时间推进 —— 触发后进入 pendingEvents 队列（事件收纳篮）
  */
 export function advanceDay(state: GameState): GameState {
+  // ===== NPC 主动行动检查：每 60 天检查一次 =====
+  state = checkNPCProactiveActions(state)
   // 只有倒计时事件会暂停时间（在 store 中已处理）
   // 普通事件进入 pendingEvents，玩家可继续推进时间
 
@@ -929,21 +1346,26 @@ export function advanceDay(state: GameState): GameState {
   if (totalDays % 35 === 0 && next.pendingEvents.length < 3) {
     const event = pickEvent(next)
     if (event) {
+      // v1.5：冷却期内若再次触发同类事件，套用变体后缀，避免文案复读
+      const variantEvent = applyVariantIfRepeated(event, next)
       // 默认选项取第一个
       const defaultOptionId = event.options[0]?.id ?? ''
       const instanceId = `${event.id}_${totalDays}_${Math.random().toString(36).slice(2, 6)}`
+      // v1.5：不同类型事件等待时间从 7 到 42 天不等
+      // 外交/军事类事件需快速响应（7-14 天），经济/社会类可从容处理（21-42 天）
+      const eventWindow = getEventWindowByCategory(event.category)
       next.pendingEvents = [
         ...next.pendingEvents,
         {
           instanceId,
           eventId: event.id,
-          title: event.title,
-          description: event.description,
+          title: variantEvent.title,
+          description: variantEvent.description,
           category: event.category,
           options: event.options,
           isEmergency: false,
           triggeredDay: totalDays,
-          deadlineDay: totalDays + 21, // 21 天后自动决策
+          deadlineDay: totalDays + eventWindow,
           defaultOptionId,
           once: event.once,
           chainInfo: undefined,
@@ -955,7 +1377,7 @@ export function advanceDay(state: GameState): GameState {
       }
       next.unreadAlerts = [
         ...next.unreadAlerts,
-        { type: 'breaking', title: `新事件：${event.title}`, timestamp: Date.now() },
+        { type: 'breaking', title: `新事件：${variantEvent.title}`, timestamp: Date.now() },
       ]
     }
   }

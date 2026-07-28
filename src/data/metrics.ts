@@ -68,6 +68,8 @@ export function deriveSecondary(metrics: Metrics): SecondaryMetrics {
     politicalPrestige: clamp2(metrics.prestige),
     mediaRating: clamp2(metrics.prestige - 5),
     historicalLegacy: clamp2(metrics.prestige - 15),
+    // 环境污染：经济越发达污染越重，依赖对外环境治理对冲
+    pollutionIndex: clamp2(80 - metrics.economy + (100 - metrics.stability) / 2),
   }
 }
 

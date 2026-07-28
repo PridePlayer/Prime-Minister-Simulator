@@ -3,7 +3,8 @@ import { useState, useMemo } from 'react'
 import { X, Clock, Handshake, AlertTriangle, Gavel, CheckCircle, XCircle } from 'lucide-react'
 import { useGameStore } from '@/store/gameStore'
 import { clamp } from '@/engine/metrics'
-import type { Metrics, PoliticalParty, PMStats, NewsItem } from '@/types/game'
+import { BACKGROUNDS, TRAITS } from '@/data/pmBackgrounds'
+import type { Metrics, PoliticalParty, PMStats, NewsItem, PMBackground, PMTrait } from '@/types/game'
 
 /** 法案类型定义 */
 interface BillType {
@@ -96,8 +97,17 @@ interface ActionLog {
 const MAX_BACKROOM_ACTIONS = 3
 const PASS_THRESHOLD = 50
 
-/** 计算初始支持票数 */
-function calcInitialVotes(parties: PoliticalParty[], bill?: BillType): { yes: number; opposition: PoliticalParty[] } {
+/** 计算初始支持票数
+ *  PM 背景与特质的 billVoteBonus 会加成初始票数：
+ *    legal_expert +10%、political_dynasty +5%
+ *  PMTraits（hardliner 等）目前只在密室行动中生效，不影响初始票数
+ */
+function calcInitialVotes(
+  parties: PoliticalParty[],
+  bill: BillType | undefined,
+  pmBackground: PMBackground | null,
+  pmTraits: PMTrait[],
+): { yes: number; opposition: PoliticalParty[] } {
   let yes = 0
   const opposition: PoliticalParty[] = []
   for (const p of parties) {
@@ -113,6 +123,12 @@ function calcInitialVotes(parties: PoliticalParty[], bill?: BillType): { yes: nu
       opposition.push(p)
     }
   }
+  // PM 背景法案通过率加成（legal_expert +10%、political_dynasty +5%）
+  const bgInfo = pmBackground ? BACKGROUNDS.find((b) => b.id === pmBackground) : null
+  const bgBonus = bgInfo?.billVoteBonus ?? 0
+  if (bgBonus > 0) {
+    yes = Math.round(yes * (1 + bgBonus))
+  }
   // 高难度法案（difficultyMod >= 2）会遭遇强烈抵制，初始票数大幅降低
   // 这确保即使执政联盟席位过半，也可能无法直接通过，必须进入密室政治
   if (bill && bill.difficultyMod >= 2) {
@@ -122,18 +138,39 @@ function calcInitialVotes(parties: PoliticalParty[], bill?: BillType): { yes: nu
   return { yes, opposition }
 }
 
-/** 执行密室行动 */
+/** 执行密室行动
+ *  PM 特质会影响特定行动的成功率：
+ *    hardliner：威胁 +15%
+ *    coordinator：利益勾兑 +15%
+ *    pragmatist / idealist：游说 +10%
+ *  PM 背景 union_representative 也会加成利益勾兑 +10%
+ */
 function executeBackroomAction(
   action: BackroomAction,
   party: PoliticalParty,
   pmStats: PMStats,
   difficultyMod: number,
+  pmBackground: PMBackground | null,
+  pmTraits: PMTrait[],
 ): ActionResult {
   const rand = Math.random()
+
+  // 计算特质/背景对当前行动的加成
+  let bonus = 0
+  const bgInfo = pmBackground ? BACKGROUNDS.find((b) => b.id === pmBackground) : null
+  for (const tid of pmTraits) {
+    const tinfo = TRAITS.find((t) => t.id === tid)
+    if (!tinfo) continue
+    if (action === 'bribe') bonus += tinfo.bribeBonus ?? 0
+    if (action === 'threaten') bonus += tinfo.threatenBonus ?? 0
+    if (action === 'persuade') bonus += tinfo.persuadeBonus ?? 0
+  }
+  if (action === 'bribe' && bgInfo?.bribeBonus) bonus += bgInfo.bribeBonus
+
   switch (action) {
     case 'bribe': {
       // 利益勾兑：成功率基于好感度，好感越高越容易被说服
-      const successRate = Math.max(0.2, Math.min(0.85, (party.favorability / 100) * 0.9 - difficultyMod * 0.05))
+      const successRate = Math.max(0.2, Math.min(0.85 + bonus, (party.favorability / 100) * 0.9 - difficultyMod * 0.05 + bonus))
       if (rand < successRate) {
         return {
           success: true,
@@ -151,7 +188,7 @@ function executeBackroomAction(
     }
     case 'threaten': {
       // 政治威胁：成功率基于风险指数，但失败后果严重
-      const successRate = Math.max(0.15, Math.min(0.75, (pmStats.riskIndex / 100) * 0.8))
+      const successRate = Math.max(0.15, Math.min(0.75 + bonus, (pmStats.riskIndex / 100) * 0.8 + bonus))
       if (rand < successRate) {
         return {
           success: true,
@@ -169,7 +206,7 @@ function executeBackroomAction(
     }
     case 'persuade': {
       // 游说中立议员：成功率基于辩论技巧
-      const successRate = Math.max(0.25, Math.min(0.8, (pmStats.rhetoric / 100) * 0.85))
+      const successRate = Math.max(0.25, Math.min(0.8 + bonus, (pmStats.rhetoric / 100) * 0.85 + bonus))
       if (rand < successRate) {
         const gained = 3 + Math.floor(Math.random() * 4)
         return {
@@ -201,6 +238,8 @@ export default function BillVotingDialog({ onClose }: { onClose: () => void }) {
 
   const parties = useGameStore((s) => s.parties)
   const pmStats = useGameStore((s) => s.pmStats)
+  const pmBackground = useGameStore((s) => s.pmBackground)
+  const pmTraits = useGameStore((s) => s.pmTraits)
   const startBackroomLobby = useGameStore((s) => s.startBackroomLobby)
 
   const opposition = useMemo(() => {
@@ -210,7 +249,7 @@ export default function BillVotingDialog({ onClose }: { onClose: () => void }) {
   /** 选择法案后进入投票计算 */
   const handleSelectBill = (bill: BillType) => {
     setSelectedBill(bill)
-    const { yes } = calcInitialVotes(parties, bill)
+    const { yes } = calcInitialVotes(parties, bill, pmBackground, pmTraits)
     setYesVotes(yes)
     if (yes >= PASS_THRESHOLD) {
       // 直接通过
@@ -234,7 +273,7 @@ export default function BillVotingDialog({ onClose }: { onClose: () => void }) {
     const target = party ?? opposition[0]
     if (!target) return
 
-    const actionResult = executeBackroomAction(action, target, pmStats, selectedBill?.difficultyMod ?? 0)
+    const actionResult = executeBackroomAction(action, target, pmStats, selectedBill?.difficultyMod ?? 0, pmBackground, pmTraits)
 
     // 应用代价
     const state = useGameStore.getState()

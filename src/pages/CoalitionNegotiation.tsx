@@ -24,12 +24,12 @@ function describeArc(
   const innerEnd = polarToCartesian(cx, cy, rInner, endAngle)
   const innerStart = polarToCartesian(cx, cy, rInner, startAngle)
   const largeArc = endAngle - startAngle > 180 ? 1 : 0
-  // 外弧逆时针（视觉上从左经顶部到右），内弧顺时针返回
+  // 外弧顺时针（视觉上从左经顶部到右，朝外凸出），内弧逆时针返回
   return [
     `M ${outerStart.x} ${outerStart.y}`,
-    `A ${rOuter} ${rOuter} 0 ${largeArc} 0 ${outerEnd.x} ${outerEnd.y}`,
+    `A ${rOuter} ${rOuter} 0 ${largeArc} 1 ${outerEnd.x} ${outerEnd.y}`,
     `L ${innerEnd.x} ${innerEnd.y}`,
-    `A ${rInner} ${rInner} 0 ${largeArc} 1 ${innerStart.x} ${innerStart.y}`,
+    `A ${rInner} ${rInner} 0 ${largeArc} 0 ${innerStart.x} ${innerStart.y}`,
     'Z',
   ].join(' ')
 }

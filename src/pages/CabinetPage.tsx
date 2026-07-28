@@ -3,7 +3,7 @@ import { useGameStore } from '@/store/gameStore'
 import { useState } from 'react'
 import type { CabinetMember, CabinetBonus, Metrics, SecondaryMetrics, NPCMemory } from '@/types/game'
 import { REPLACEMENT_CANDIDATES, NEW_DEPARTMENT_CANDIDATES, PRESET_DEPARTMENT_NAMES } from '@/data/cabinet'
-import { getNPCTone } from '@/data/npcTones'
+import { getNPCTone, getBetrayedNPCs } from '@/data/npcTones'
 import { clamp, applyEffects, shouldShowOptionEffects } from '@/engine/metrics'
 
 /** 指标标签映射 */
@@ -323,9 +323,24 @@ export default function CabinetPage() {
     if (!candidates || candidates.length === 0) return
 
     const candidate = candidates[selectedCandidate]
+
+    // NPC 记忆影响任命：若该职位的前任是被出卖/解职的（tone 为 hostile/resentful），
+    // 继任者忠诚度初始 -15（听闻前任结局后心存芥蒂）
+    const betrayedIds = getBetrayedNPCs(useGameStore.getState().npcMemories)
+    const wasBetrayed = betrayedIds.includes(reshuffleTarget.id)
+    const effectiveLoyalty = wasBetrayed
+      ? Math.max(20, candidate.loyalty - 15)
+      : candidate.loyalty
+
     const newCabinet = cabinet.map((c) =>
       c.id === reshuffleTarget.id
-        ? { ...c, name: candidate.name, loyalty: candidate.loyalty, advice: candidate.advice, bonuses: { ...candidate.bonuses } }
+        ? {
+            ...c,
+            name: candidate.name,
+            loyalty: effectiveLoyalty,
+            advice: candidate.advice,
+            bonuses: { ...candidate.bonuses },
+          }
         : c,
     )
 
@@ -341,9 +356,11 @@ export default function CabinetPage() {
           id: `news_reshuffle_${Date.now()}`,
           timestamp: `${useGameStore.getState().year}年${useGameStore.getState().month}月`,
           title: `${reshuffleTarget.role}换人`,
-          summary: `${candidate.name}接替${reshuffleTarget.name}出任${reshuffleTarget.role}。`,
+          summary: wasBetrayed
+            ? `${candidate.name}接替${reshuffleTarget.name}出任${reshuffleTarget.role}。听闻前任结局，新部长神情戒备，初始忠诚度较低。`
+            : `${candidate.name}接替${reshuffleTarget.name}出任${reshuffleTarget.role}。`,
           category: '内阁',
-          tone: 'neutral',
+          tone: wasBetrayed ? 'negative' : 'neutral',
         },
         ...useGameStore.getState().news,
       ],

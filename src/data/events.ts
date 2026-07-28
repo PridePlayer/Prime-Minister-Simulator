@@ -1,5 +1,8 @@
 import type { GameEvent } from '@/types/game'
 import { MORAL_DILEMMAS, LEAK_EVENTS } from './moralDilemmas'
+import { PERSONAL_EVENTS } from './personalEvents'
+import { CROSS_SYSTEM_EVENTS } from './crossSystemEvents'
+import { EVENT_CHAIN_EVENTS } from './eventChainEvents'
 
 /** 事件库（含事件链） */
 export const EVENTS: GameEvent[] = [
@@ -1288,6 +1291,12 @@ export const EVENTS: GameEvent[] = [
   // ===== 道德两难事件 + 匿名泄密事件 =====
   ...MORAL_DILEMMAS,
   ...LEAK_EVENTS,
+
+  // ===== 总理个人生活事件（家庭 / 健康 / 黑金 / 压力）=====
+  ...PERSONAL_EVENTS,
+
+  // ===== 跨系统联动事件（读取世界状态：失业率/军费/战争/法律/腐败等）=====
+  ...CROSS_SYSTEM_EVENTS,
 
   // ===== 新增事件：跨模块联动 + 延迟后果 =====
 
@@ -3194,4 +3203,9 @@ export const EVENTS: GameEvent[] = [
       },
     ],
   },
+
+  // ===== 多阶段事件链事件（边境冲突升级链 / 经济危机链 / 政治丑闻链）=====
+  // 详见 src/data/eventChainDefinitions.ts 与 src/data/eventChainEvents.ts
+  // 这些事件通过 triggeredBy 标记，不会出现在普通随机池中
+  ...EVENT_CHAIN_EVENTS,
 ]

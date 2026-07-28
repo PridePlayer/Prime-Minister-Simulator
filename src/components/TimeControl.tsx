@@ -37,8 +37,6 @@ export default function TimeControl() {
   const advanceOneDay = useGameStore((s) => s.advanceOneDay)
   const setTimeSpeed = useGameStore((s) => s.setTimeSpeed)
   const currentCountdown = useGameStore((s) => s.currentCountdown)
-  const setShowEventBasket = useGameStore((s) => s.setShowEventBasket)
-  const pendingEventsCount = useGameStore((s) => s.pendingEvents.length)
   const { writeSave } = useSaveGame()
   const autoSaveIntervalMinutes = useSettingsStore((s) => s.autoSaveIntervalMinutes)
   const autoSaveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -119,25 +117,6 @@ export default function TimeControl() {
           )
         })}
       </div>
-
-      {/* 事件篮按钮 */}
-      <button
-        onClick={() => setShowEventBasket(true)}
-        className="relative flex items-center gap-1 rounded-md border border-amber-400/40 bg-amber-50/80 px-3 py-1.5 font-mono text-[11px] font-bold text-amber-800 transition-colors hover:bg-amber-200/60"
-        title="打开事件收纳篮"
-      >
-        <span>🗂️</span>
-        <span>事件篮</span>
-        {pendingEventsCount > 0 && (
-          <motion.span
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            className="ml-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 font-mono text-[9px] text-white"
-          >
-            {pendingEventsCount}
-          </motion.span>
-        )}
-      </button>
 
       {/* 状态提示 */}
       <div className="hidden font-mono text-[10px] tracking-wider text-amber-700/50 lg:block">

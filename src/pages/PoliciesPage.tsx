@@ -18,6 +18,12 @@ import type { NationalPolicy } from '@/types/game'
 export default function PoliciesPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>(POLICY_CATEGORIES[0])
   const activePolicies = useGameStore((s) => s.activePolicies)
+  const clearAlerts = useGameStore((s) => s.clearAlerts)
+
+  // 进入政策页时清除 policy 红点提醒（已查看新解锁的政策）
+  useEffect(() => {
+    clearAlerts('policy')
+  }, [clearAlerts])
 
   return (
     <div className="flex flex-col h-full">

@@ -1,4 +1,4 @@
-import type { TaskNode } from '@/types/game'
+import type { TaskNode, GameState } from '@/types/game'
 
 /** 任务树：玩家可在任务树页面查看所有任务及完成路径
  *  任务分为不同类别，部分任务有前置依赖
@@ -264,6 +264,23 @@ export function isTaskUnlocked(
 ): boolean {
   if (!task.prerequisiteTasks || task.prerequisiteTasks.length === 0) return true
   return task.prerequisiteTasks.every((id) => completedTaskIds.includes(id))
+}
+
+/**
+ * 找出本回合新完成的任务：满足完成条件 + 前置已满足 + 尚未在 completedTaskIds 中
+ * 返回新增完成任务列表（保留顺序）
+ */
+export function findNewlyCompletedTasks(state: GameState): TaskNode[] {
+  const completed = new Set(state.completedTaskIds)
+  const newly: TaskNode[] = []
+  for (const task of TASK_TREE) {
+    if (completed.has(task.id)) continue
+    if (!isTaskUnlocked(task, state.completedTaskIds)) continue
+    if (isTaskCompleted(task, state)) {
+      newly.push(task)
+    }
+  }
+  return newly
 }
 
 /** 任务类别元信息 */

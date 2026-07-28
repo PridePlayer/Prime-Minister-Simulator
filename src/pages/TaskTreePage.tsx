@@ -18,15 +18,27 @@ export default function TaskTreePage() {
   const term = useGameStore((s) => s.term)
   const turn = useGameStore((s) => s.turn)
   const achievements = useGameStore((s) => s.achievements)
+  // 从 store 读取已持久化的完成任务（gameStore 会在 advanceOneDay 末尾更新此列表）
+  const persistedCompletedIds = useGameStore((s) => s.completedTaskIds)
+  const clearAlerts = useGameStore((s) => s.clearAlerts)
   const [filterCategory, setFilterCategory] = useState<string>('全部')
 
-  // 实时计算每个任务的完成状态
+  // 进入任务页时清除 task 红点提醒
+  useEffect(() => {
+    clearAlerts('task')
+  }, [clearAlerts])
+
+  // 实时计算每个任务的完成状态：
+  //  - 已持久化完成（store.completedTaskIds）：直接标记为已完成
+  //  - 未持久化但当前满足条件：标记为已完成（视觉一致），但奖励未发放（会在下次 advanceOneDay 时落地）
   const taskStates = useMemo(() => {
-    const completedIds: string[] = []
+    const persistedSet = new Set(persistedCompletedIds)
+    const completedIds: string[] = [...persistedCompletedIds]
     const map = new Map<string, { completed: boolean; unlocked: boolean; progress: number }>()
     for (const task of TASK_TREE) {
-      const completed = isTaskCompleted(task, { metrics, term, turn })
-      if (completed) completedIds.push(task.id)
+      if (!persistedSet.has(task.id) && isTaskCompleted(task, { metrics, term, turn })) {
+        completedIds.push(task.id)
+      }
     }
     for (const task of TASK_TREE) {
       const completed = completedIds.includes(task.id)
@@ -41,7 +53,7 @@ export default function TaskTreePage() {
       map.set(task.id, { completed, unlocked, progress })
     }
     return { map, completedIds }
-  }, [metrics, term, turn])
+  }, [metrics, term, turn, persistedCompletedIds])
 
   // 筛选：返回应当显示的任务（含直接关联的父/子任务，避免树断线）
   const visibleTasks = useMemo(() => {

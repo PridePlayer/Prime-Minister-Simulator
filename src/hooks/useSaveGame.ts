@@ -34,6 +34,11 @@ function formatError(e: unknown): string {
  *  - 突击新闻发布会/密室游说 minigame 状态：强制关闭，防止读档后卡在 minigame
  *  - 病休状态（healthEventActive）：旧存档无此字段，默认 false
  *  - 改革树深度扩展（L0~L4+）：数据结构未变，仅 requiresInitiative 链路扩展，无需迁移
+ *  - v1.5 新增字段（metricHistory / warCommand / pendingChains / lastNpcProactiveCheckDay）：
+ *    由 loadGame 的 ?? 兜底（[] / null / [] / 0），旧存档可平滑加载，下月起开始记录历史曲线
+ *  - v0.3 新增字段（proposedParameterizedBills / npcMemories / eventCooldowns / currentStoryBeat）：
+ *    显式兜底为 [] / [] / [] / null，让旧存档读取 v0.3 引入的"议员提案 / NPC 记忆 / 主动行动冷却 / 节令时序"
+ *    字段时不会出现 undefined，下月起开始正常生成数据
  *
  *  本函数仅处理"会导致卡死或运行时错误"的字段；纯数据缺失由 gameStore.loadGame 的 ?? 兜底。
  */
@@ -54,6 +59,12 @@ function migrateGameState(raw: unknown): GameState {
   // 清除大选触发标志和快照（读档后不应处于大选阶段）
   delete (s as any).__triggerElection
   s.electionSnapshot = undefined
+  // v0.3 显式兜底：议员提案 / NPC 记忆 / 主动行动冷却 / 节令时序叙事
+  if (!Array.isArray(s.proposedParameterizedBills)) s.proposedParameterizedBills = []
+  if (!Array.isArray(s.npcMemories)) s.npcMemories = []
+  if (!Array.isArray(s.eventCooldowns)) s.eventCooldowns = []
+  if (s.currentStoryBeat === undefined) s.currentStoryBeat = null
+  if (s.lastStoryDay === undefined) s.lastStoryDay = 0
   // 确保 gamePhase 为 playing（防止存档时处于 election/coalition 等特殊阶段）
   s.gamePhase = 'playing'
   // 时间强制暂停（读档后由玩家手动恢复）

@@ -15,24 +15,36 @@ interface NavLeaf {
 }
 
 /** 导航项：按轻重缓急排序
- *  顺序原则：紧急待办（仪表盘/任务）→ 施政工具（政策/改革）→ 国政各领域 → 新闻回溯
- *  议会/民意/内阁 三组已移至右侧图标栏（SideRail），百科移至右上角"菜单" */
+ *  顺序原则：紧急待办（仪表盘/任务）→ 施政工具（政策/改革/法律）→ 国政各领域 → 新闻回溯
+ *  议会/民意/内阁/总理 四组已移至右侧图标栏（SideRail），百科移至右上角"菜单"
+ *  v1.5：总理档案与人物谱从主导航移至右侧栏（与议会同模式）
+ *  v1.5：新增"国情"（地方行政区划）与"月度归因"导航 */
 const NAV_ITEMS: NavLeaf[] = [
   { page: 'dashboard', label: '仪表盘', icon: '📊', hotkey: 'D' },
-  { page: 'pm_profile', label: '总理', icon: '🪪', hotkey: 'F' },
   { page: 'tasks', label: '任务树', icon: '🎯', hotkey: 'T' },
+  { page: 'country', label: '国情', icon: '🗺️', hotkey: 'Y' },
   { page: 'policies', label: '政策树', icon: '🌐', hotkey: 'P' },
   { page: 'initiatives', label: '改革', icon: '📋', hotkey: 'I' },
+  { page: 'laws', label: '法律', icon: '⚖️', hotkey: 'G' },
   { page: 'diplomacy', label: '外交', icon: '🤝', hotkey: 'O' },
   { page: 'military', label: '军事', icon: '⚔️', hotkey: 'M' },
   { page: 'economy', label: '经济', icon: '📈', hotkey: 'E' },
   { page: 'society', label: '社会', icon: '🏘️', hotkey: 'S' },
   { page: 'environment', label: '环境', icon: '🌱', hotkey: 'N' },
-  { page: 'news', label: '新闻', icon: '📰', hotkey: 'W' },
 ]
 
-/** 右侧图标栏分组：议会 / 民意 / 内阁（平时仅图标，悬停展开文字） */
+/** 右侧图标栏分组：总理 / 议会 / 民意 / 内阁 / 资讯（平时仅图标，悬停展开文字）
+ *  v1.5 新增"总理"组：总理档案 + 人物谱
+ *  v1.5.1 归因、新闻移至右侧栏 */
 export const SIDE_RAIL_GROUPS: { label: string; icon: string; items: NavLeaf[] }[] = [
+  {
+    label: '总理',
+    icon: '🪪',
+    items: [
+      { page: 'pm_profile', label: '总理档案', icon: '🪪', hotkey: 'F' },
+      { page: 'npcs', label: '人物谱', icon: '👥', hotkey: 'K' },
+    ],
+  },
   {
     label: '议会',
     icon: '🏛️',
@@ -56,6 +68,14 @@ export const SIDE_RAIL_GROUPS: { label: string; icon: string; items: NavLeaf[] }
     items: [
       { page: 'cabinet', label: '内阁名单', icon: '👥', hotkey: 'V' },
       { page: 'cabinet_chat', label: '内阁聊天', icon: '💬', hotkey: 'C' },
+    ],
+  },
+  {
+    label: '资讯',
+    icon: '📰',
+    items: [
+      { page: 'news', label: '新闻', icon: '📰', hotkey: 'W' },
+      { page: 'monthly_report', label: '归因', icon: '📑', hotkey: 'H' },
     ],
   },
 ]

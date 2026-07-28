@@ -15,7 +15,7 @@ export const GAME_VERSION: string = pkg.version
 export const VERSION_META: { version: string; codename: string; releasedAt: string } = {
   version: GAME_VERSION,
   /** 版本代号（可选，便于口头传播） */
-  codename: '大选之年',
+  codename: '中央引擎',
   /** 本版本发布日期（ISO） */
-  releasedAt: '2026-07-27',
+  releasedAt: '2026-07-28',
 }

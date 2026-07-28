@@ -292,6 +292,26 @@ export const DIPLOMATIC_ACTIONS: DiplomaticActionDef[] = [
     }),
   },
   {
+    id: 'damage_relations',
+    label: '破坏关系',
+    description: '撤回大使、取消高层互访、制造外交摩擦。大幅降低关系，为后续行动铺路。',
+    icon: '🗡️',
+    kind: 'covert',
+    maxRelation: 80,
+    politicalCapitalCost: 6,
+    cooldown: 6,
+    execute: (country) => ({
+      country: { relation: clamp(country.relation - 12) },
+      metrics: { diplomacy: -3, prestige: -1 },
+      pmStats: { riskIndex: 4 },
+      news: {
+        title: `与${country.name}关系恶化`,
+        summary: `外交部宣布召回驻${country.name}大使，双边关系急剧降温。`,
+        tone: 'negative',
+      },
+    }),
+  },
+  {
     id: 'espionage',
     label: '派遣间谍',
     description: '渗透对方情报系统，窃取军政机密。被发现将严重损害关系。',
@@ -389,13 +409,59 @@ export const DIPLOMATIC_ACTIONS: DiplomaticActionDef[] = [
     }),
   },
   {
+    id: 'manufacture_pretext',
+    label: '制造战争借口',
+    description: '授意情报部门在边境制造事端并栽赃对方，为开战制造"正当性"。需要间谍渗透等级≥2。一旦败露，国际声望扫地。',
+    icon: '🎭',
+    kind: 'covert',
+    maxRelation: 55,
+    politicalCapitalCost: 18,
+    cooldown: 12,
+    execute: (country, state) => {
+      if (country.espionageLevel < 2) {
+        return {
+          country: {},
+          news: {
+            title: '行动搁置：情报网不足以支撑秘密行动',
+            summary: `对${country.name}的渗透等级过低（需≥2），情报局长拒绝执行高风险任务。`,
+            tone: 'neutral',
+          },
+        }
+      }
+      // 道德越低越果决；败露概率 35%
+      const exposed = Math.random() < 0.35
+      if (exposed) {
+        return {
+          country: { relation: Math.max(0, country.relation - 25) },
+          pmStats: { riskIndex: 18 },
+          metrics: { prestige: -10, diplomacy: -8, approval: -5 },
+          news: {
+            title: '栽赃行动败露，国际舆论哗然',
+            summary: `我方特工在${country.name}边境制造事端时被当场抓获，证据链直指总理府。各国纷纷谴责，反对党要求彻查。`,
+            tone: 'negative',
+          },
+        }
+      }
+      return {
+        country: { relation: Math.max(3, country.relation - 30) },
+        pmStats: { riskIndex: 8 },
+        metrics: { approval: 3, stability: -2 },
+        news: {
+          title: `${country.name}边境爆发"武装挑衅"事件`,
+          summary: `据官方通报，${country.name}军队在边境制造流血冲突。国内群情激愤，要求政府强硬回应的呼声高涨。（战争借口已就绪：可对${country.name}宣战）`,
+          tone: 'neutral',
+        },
+      }
+    },
+  },
+  {
     id: 'declare_war',
     label: '宣战',
-    description: '正式向对方国家宣战。一旦宣战将进入完整战争事件链，胜负由双方军事力量与总理决策共同决定。',
+    description: '正式向对方国家宣战。一旦宣战将进入完整战争事件链，胜负由双方真实军事力量（三军状态、将领、军费投入）与总理决策共同决定。',
     icon: '⚔️',
     kind: 'military',
-    maxRelation: 30,
-    politicalCapitalCost: 30,
+    maxRelation: 45,
+    politicalCapitalCost: 25,
     cooldown: 999,
     execute: (country) => ({
       country: { relation: 0, relationLevel: '交战' },

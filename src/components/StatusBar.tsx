@@ -8,13 +8,13 @@ import logoIcon from '@/icon/icon.png'
 /** PMStats 显示条 */
 function PMStatBar({ label, value, color, icon }: { label: string; value: number; color: string; icon: string }) {
   return (
-    <div className="flex flex-col items-center gap-0.5 px-2" title={`${label}：${value}`}>
+    <div className="flex flex-col items-center gap-0.5 px-1.5" title={`${label}：${value}`}>
       <div className="flex items-center gap-1">
         <span className="text-xs">{icon}</span>
         <span className="font-mono text-[9px] tracking-wider text-parchment-200/60">{label}</span>
       </div>
-      <div className="flex items-center gap-1.5">
-        <div className="h-1 w-12 overflow-hidden rounded-full bg-ink-700">
+      <div className="flex items-center gap-1">
+        <div className="h-1 w-10 overflow-hidden rounded-full bg-ink-700">
           <div
             className="h-full rounded-full transition-all duration-500"
             style={{ width: `${value}%`, backgroundColor: color }}
@@ -30,7 +30,7 @@ function PMStatBar({ label, value, color, icon }: { label: string; value: number
 
 /** 顶部状态栏 */
 export default function StatusBar() {
-  const { pmName, countryName, term, year, month, day, turn, metrics, pmStats } = useGameStore()
+  const { pmName, countryName, term, year, month, day, turn, metrics, pmStats, partyPatience } = useGameStore()
   const turnInTerm = ((turn - 1) % TERM_LENGTH) + 1
   const avg = average(metrics)
   const cabinetSupport = Math.round(
@@ -48,8 +48,12 @@ export default function StatusBar() {
   const rhColor = pmStats.rhetoric < 30 ? '#f59e0b' : '#3b82f6'
   const riColor = pmStats.riskIndex > 60 ? '#ef4444' : pmStats.riskIndex > 30 ? '#f59e0b' : '#10b981'
 
+  // 执政党耐心值：< 30 触发最后通牒，< 50 显示橙色警告
+  const patColor = partyPatience < 30 ? '#ef4444' : partyPatience < 50 ? '#f59e0b' : '#a855f7'
+  const patWarn = partyPatience < 50
+
   return (
-    <header className="status-bar relative flex items-center gap-3 px-4 py-2 overflow-x-auto overflow-y-hidden">
+    <header className="status-bar relative flex items-center gap-2 px-4 py-2 overflow-hidden">
       {/* 左：总理与任期 */}
       <div className="flex items-center gap-3 shrink-0">
         <div className="flex h-9 w-9 items-center justify-center rounded-full border border-gold/50 bg-ink-900 shadow-gold overflow-hidden">
@@ -65,12 +69,14 @@ export default function StatusBar() {
         </div>
       </div>
 
-      {/* 中左：年月日与回合 */}
-      <div className="flex flex-col items-center shrink-0 border-l border-gold/20 pl-3">
-        <div className="font-display text-lg font-semibold tracking-wide text-gold">
+      {/* 中左：年月日与回合
+          固定 min-width + tabular-nums，避免月/日位数变化（1↔12、1↔31）
+          导致容器宽度跳动，进而挤压右侧所有元素左右平移 */}
+      <div className="flex flex-col items-center shrink-0 border-l border-gold/20 pl-3 min-w-[216px]">
+        <div className="font-display text-lg font-semibold tracking-wide text-gold tabular-nums">
           {year} 年 {month} 月 {day} 日
         </div>
-        <div className="font-mono text-[9px] tracking-[0.3em] text-parchment-200/60">
+        <div className="font-mono text-[9px] tracking-[0.3em] text-parchment-200/60 tabular-nums">
           本届第 {turnInTerm} / {TERM_LENGTH} 月
         </div>
         {electionNear && (
@@ -81,7 +87,7 @@ export default function StatusBar() {
       </div>
 
       {/* 中：6 项核心指标（带 hover tooltip） */}
-      <div className="flex items-center gap-1.5 border-l border-gold/20 pl-3 shrink-0">
+      <div className="flex items-center gap-1 border-l border-gold/20 pl-2 shrink-0">
         {METRIC_META.map((m) => {
           const value = metrics[m.key as MetricKey]
           const color = metricColor(value)
@@ -120,7 +126,7 @@ export default function StatusBar() {
       </div>
 
       {/* 右：PMStats 四项资源 */}
-      <div className="flex items-center gap-1 border-l border-gold/20 pl-3 shrink-0">
+      <div className="flex items-center gap-0.5 border-l border-gold/20 pl-2 shrink-0">
         <PMStatBar label="政治资本" value={pmStats.politicalCapital} color={pcColor} icon="💼" />
         <PMStatBar label="党内威望" value={pmStats.partyPrestige} color={ppColor} icon="🏛️" />
         <PMStatBar label="辩论技巧" value={pmStats.rhetoric} color={rhColor} icon="🗣️" />
@@ -128,18 +134,35 @@ export default function StatusBar() {
       </div>
 
       {/* 最右：内阁支持 */}
-      <div className="text-right border-l border-gold/20 pl-3 shrink-0">
+      <div className="text-right border-l border-gold/20 pl-2 shrink-0">
         <div className="font-mono text-[9px] tracking-wider text-parchment-200/60">
           内阁支持
         </div>
-        <div className="flex items-center gap-1.5">
-          <div className="h-1 w-12 overflow-hidden rounded-full bg-ink-600">
+        <div className="flex items-center gap-1.5 justify-end">
+          <div className="h-1 w-10 overflow-hidden rounded-full bg-ink-600">
             <div
               className="h-full rounded-full bg-gold transition-all duration-500"
               style={{ width: `${cabinetSupport}%` }}
             />
           </div>
           <span className="font-mono text-xs text-parchment-100">{cabinetSupport}</span>
+        </div>
+      </div>
+
+      {/* 执政党耐心值：< 50 时高亮显示警告 */}
+      <div className="text-right border-l border-gold/20 pl-2 shrink-0" title={`执政党耐心：${partyPatience}/100${patWarn ? '（耐心不足，可能触发最后通牒）' : ''}`}>
+        <div className={`font-mono text-[9px] tracking-wider flex items-center gap-1 justify-end ${patWarn ? 'text-red-400 animate-pulse' : 'text-parchment-200/60'}`}>
+          执政党耐心
+          {patWarn && <span className="text-[9px]">⚠</span>}
+        </div>
+        <div className="flex items-center gap-1.5 justify-end">
+          <div className={`h-1 w-10 overflow-hidden rounded-full bg-ink-600 ${patWarn ? 'ring-1 ring-red-500/40' : ''}`}>
+            <div
+              className="h-full rounded-full transition-all duration-500"
+              style={{ width: `${partyPatience}%`, backgroundColor: patColor }}
+            />
+          </div>
+          <span className="font-mono text-xs" style={{ color: patColor }}>{partyPatience}</span>
         </div>
       </div>
     </header>

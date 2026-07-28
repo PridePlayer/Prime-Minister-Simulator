@@ -30,6 +30,7 @@ const SECONDARY_META: Record<SecondaryMetricKey, { label: string; positive: bool
   politicalPrestige: { label: '政坛威望', positive: true, icon: '👑' },
   mediaRating: { label: '媒体评价', positive: true, icon: '📰' },
   historicalLegacy: { label: '历史声望', positive: true, icon: '📜' },
+  pollutionIndex: { label: '污染指数', positive: false, icon: '☣️' },
 }
 
 const PRIMARY_METRIC_LABEL: Record<keyof Metrics, { label: string; icon: string }> = {
@@ -132,9 +133,9 @@ export default function DomainPageLayout({ domain }: { domain: DomainType }) {
   const primaryMeta = PRIMARY_METRIC_LABEL[meta.primaryMetric]
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col">
       {/* 顶部标题 */}
-      <div className="flex items-center gap-3 mb-3">
+      <div className="flex items-center gap-3 mb-3 sticky top-0 z-10 bg-ink-900/80 backdrop-blur-sm py-2 -mx-1 px-1 rounded">
         <span className="text-2xl">{meta.icon}</span>
         <span
           className="font-display text-lg font-bold tracking-[0.25em]"
@@ -142,18 +143,19 @@ export default function DomainPageLayout({ domain }: { domain: DomainType }) {
         >
           {meta.label} 部
         </span>
-        <span className="font-mono text-[11px] text-parchment-200/60">
+        <span className="font-mono text-[11px] text-parchment-200/60 hidden sm:inline">
           {meta.statusTitle}
         </span>
         <div className="h-px flex-1 bg-gradient-to-r to-transparent" style={{ background: `linear-gradient(to right, ${meta.color}66, transparent)` }} />
-        <span className="font-mono text-[10px] text-parchment-200/40">
+        <span className="font-mono text-[10px] text-parchment-200/40 whitespace-nowrap">
           第 {turn} 月 · {year}年{month}月
         </span>
       </div>
 
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 min-h-0">
+      {/* v1.5 改版：全屏可滚动布局，移除内部小滚动区 */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
         {/* 左侧：措施列表 */}
-        <div className="overflow-y-auto pr-1">
+        <div className="pr-1">
           {/* 主指标快览 */}
           <div className="doc-card p-3 mb-3" style={{ borderColor: `${meta.color}55` }}>
             <div className="flex items-center gap-3">
@@ -346,7 +348,7 @@ export default function DomainPageLayout({ domain }: { domain: DomainType }) {
         </div>
 
         {/* 右侧：现状面板 + 新闻 + 历史 */}
-        <div className="overflow-y-auto pl-1 space-y-3">
+        <div className="pl-1 space-y-3 lg:sticky lg:top-16 lg:self-start lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto">
           {/* 二级指标现状 */}
           <div className="doc-card p-3">
             <div className="flex items-center gap-2 mb-2">

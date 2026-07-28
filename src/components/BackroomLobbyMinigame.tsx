@@ -34,6 +34,116 @@ interface Representative {
   bribed: boolean
   talked: boolean
   locked: boolean
+  /** v1.5：派系（决定诉求类型与风格） */
+  faction: RepresentativeFaction
+  /** v1.5：派系诉求（玩家若收买则需在后续兑现） */
+  demand: RepresentativeDemand
+}
+
+/** v1.5：派系类型（决定代表风格与诉求池） */
+type RepresentativeFaction =
+  | 'financier'
+  | 'labor'
+  | 'media'
+  | 'clergy'
+  | 'military'
+  | 'industry'
+  | 'aristocrat'
+  | 'reformist'
+
+/** v1.5：派系元信息（名称/图标/诉求池/影响力范围） */
+const FACTION_META: Record<RepresentativeFaction, {
+  name: string
+  emoji: string
+  influenceRange: [number, number]
+  demands: { text: string; effectLabel: string }[]
+}> = {
+  financier: {
+    name: '银行家公会',
+    emoji: '💰',
+    influenceRange: [10, 18],
+    demands: [
+      { text: '要求放松金融监管', effectLabel: '经济 +3 / 稳定 -2' },
+      { text: '要求降低资本利得税', effectLabel: '经济 +2 / 国库 -3' },
+      { text: '要求央行独立', effectLabel: '经济 +2 / 声望 -2' },
+    ],
+  },
+  labor: {
+    name: '工会联盟',
+    emoji: '⚒️',
+    influenceRange: [14, 22],
+    demands: [
+      { text: '要求提高最低工资', effectLabel: '民意 +3 / 经济 -2' },
+      { text: '要求立法保护罢工权', effectLabel: '民意 +2 / 经济 -3' },
+      { text: '要求扩大工会集体谈判权', effectLabel: '稳定 +2 / 经济 -2' },
+    ],
+  },
+  media: {
+    name: '媒体大亨',
+    emoji: '📰',
+    influenceRange: [8, 16],
+    demands: [
+      { text: '要求放宽媒体所有权限制', effectLabel: '声望 +3 / 民意 -2' },
+      { text: '要求政府广告投放倾斜', effectLabel: '声望 +2 / 国库 -2' },
+      { text: '要求采访独家权限', effectLabel: '声望 +2 / 风险 +3' },
+    ],
+  },
+  clergy: {
+    name: '宗教领袖',
+    emoji: '🕯️',
+    influenceRange: [10, 18],
+    demands: [
+      { text: '要求宗教节日法定化', effectLabel: '民意 +2 / 稳定 +1' },
+      { text: '要求宗教团体免税', effectLabel: '民意 +1 / 国库 -3' },
+      { text: '要求教育课程加入宗教内容', effectLabel: '稳定 +2 / 民意 -2' },
+    ],
+  },
+  military: {
+    name: '退役将领',
+    emoji: '🎖️',
+    influenceRange: [12, 22],
+    demands: [
+      { text: '要求提高军费预算', effectLabel: '稳定 +3 / 国库 -4' },
+      { text: '要求退役军人安置法案', effectLabel: '稳定 +2 / 国库 -2' },
+      { text: '要求军方在国安会议有席位', effectLabel: '稳定 +2 / 声望 -2' },
+    ],
+  },
+  industry: {
+    name: '工业财阀',
+    emoji: '🏭',
+    influenceRange: [14, 24],
+    demands: [
+      { text: '要求放松环保管制', effectLabel: '经济 +4 / 稳定 -2' },
+      { text: '要求国企私有化', effectLabel: '经济 +3 / 国库 +2 / 稳定 -3' },
+      { text: '要求政府采购倾斜', effectLabel: '经济 +2 / 国库 -3' },
+    ],
+  },
+  aristocrat: {
+    name: '旧贵族',
+    emoji: '👑',
+    influenceRange: [8, 16],
+    demands: [
+      { text: '要求恢复部分世袭特权', effectLabel: '声望 +2 / 民意 -3' },
+      { text: '要求土地继承免税', effectLabel: '声望 +1 / 国库 -3' },
+      { text: '要求文化保护法案', effectLabel: '声望 +2 / 稳定 +1' },
+    ],
+  },
+  reformist: {
+    name: '改革派学人',
+    emoji: '📚',
+    influenceRange: [10, 18],
+    demands: [
+      { text: '要求推动选举制度改革', effectLabel: '民意 +3 / 稳定 -2' },
+      { text: '要求公开官员财产', effectLabel: '民意 +2 / 声望 -2' },
+      { text: '要求司法独立修宪', effectLabel: '民意 +2 / 稳定 -3' },
+    ],
+  },
+}
+
+/** v1.5：派系诉求（被收买时绑定到玩家承诺） */
+interface RepresentativeDemand {
+  text: string
+  effectLabel: string
 }
 
 /** 谈判反馈结果 */
@@ -48,17 +158,56 @@ interface NegotiationFeedback {
 /** 玩家起始位置（左上角） */
 const PLAYER_START = { x: 0, y: 0 }
 
-/** 初始利益集团代表布局（散布在棋盘上，避开起点） */
+/** v1.5：随机生成密室代表
+ *  - 人数：4 ~ 7（随机）
+ *  - 位置：5x5 棋盘随机分布，避开起点 (0,0) 与已占用格
+ *  - 影响力：按派系 influenceRange 随机
+ *  - 派系诉求：从该派系 demands 池中随机选一条
+ *  - 派系：从全部 8 类派系中无重复抽取（保证多样性） */
 function createInitialReps(): Representative[] {
-  return [
-    { id: 'rep_banker', name: '银行家公会', emoji: '💰', pos: { x: 2, y: 0 }, influence: 14, bribed: false, talked: false, locked: false },
-    { id: 'rep_union',  name: '工会联盟',   emoji: '⚒️', pos: { x: 4, y: 1 }, influence: 18, bribed: false, talked: false, locked: false },
-    { id: 'rep_media',  name: '媒体大亨',   emoji: '📰', pos: { x: 1, y: 2 }, influence: 12, bribed: false, talked: false, locked: false },
-    { id: 'rep_clergy', name: '宗教领袖',   emoji: '🕯️', pos: { x: 3, y: 3 }, influence: 15, bribed: false, talked: false, locked: false },
-    { id: 'rep_general', name: '退役将领', emoji: '🎖️', pos: { x: 0, y: 4 }, influence: 16, bribed: false, talked: false, locked: false },
-    { id: 'rep_industry', name: '工业财阀', emoji: '🏭', pos: { x: 4, y: 4 }, influence: 20, bribed: false, talked: false, locked: false },
-    { id: 'rep_aristocrat', name: '旧贵族', emoji: '👑', pos: { x: 2, y: 3 }, influence: 13, bribed: false, talked: false, locked: false },
+  const allFactions: RepresentativeFaction[] = [
+    'financier', 'labor', 'media', 'clergy',
+    'military', 'industry', 'aristocrat', 'reformist',
   ]
+  // 洗牌派系
+  const shuffledFactions = [...allFactions].sort(() => Math.random() - 0.5)
+  // 随机人数 4~7
+  const count = 4 + Math.floor(Math.random() * 4)
+  const chosenFactions = shuffledFactions.slice(0, count)
+
+  // 生成所有非起点的棋盘坐标并洗牌
+  const allCells: { x: number; y: number }[] = []
+  for (let y = 0; y < BOARD_ROWS; y++) {
+    for (let x = 0; x < BOARD_COLS; x++) {
+      if (x === PLAYER_START.x && y === PLAYER_START.y) continue
+      allCells.push({ x, y })
+    }
+  }
+  const shuffledCells = allCells.sort(() => Math.random() - 0.5)
+
+  const reps: Representative[] = []
+  for (let i = 0; i < chosenFactions.length; i++) {
+    const faction = chosenFactions[i]
+    const meta = FACTION_META[faction]
+    const cell = shuffledCells[i]
+    const influence = meta.influenceRange[0] + Math.floor(
+      Math.random() * (meta.influenceRange[1] - meta.influenceRange[0] + 1),
+    )
+    const demand = meta.demands[Math.floor(Math.random() * meta.demands.length)]
+    reps.push({
+      id: `rep_${faction}_${i}_${Math.random().toString(36).slice(2, 6)}`,
+      name: meta.name,
+      emoji: meta.emoji,
+      pos: cell,
+      influence,
+      bribed: false,
+      talked: false,
+      locked: false,
+      faction,
+      demand,
+    })
+  }
+  return reps
 }
 
 /** 谈判选项定义 */
@@ -662,6 +811,18 @@ function BoardView({
                   <div className="font-mono text-[10px] text-gold/80">
                     影响力 {adjacentRep.influence}
                   </div>
+                </div>
+              </div>
+              {/* v1.5：派系诉求展示（让玩家在游说前就知道"代价"） */}
+              <div className="mt-2 rounded border border-purple-500/30 bg-purple-500/5 p-2">
+                <div className="font-mono text-[9px] text-purple-300/80 mb-0.5">
+                  ⚖️ 派系诉求（收买后需兑现）
+                </div>
+                <div className="font-serif text-[11px] text-parchment-100 leading-relaxed">
+                  {adjacentRep.demand.text}
+                </div>
+                <div className="font-mono text-[9px] text-parchment-200/50 mt-0.5">
+                  后续效果：{adjacentRep.demand.effectLabel}
                 </div>
               </div>
               <button

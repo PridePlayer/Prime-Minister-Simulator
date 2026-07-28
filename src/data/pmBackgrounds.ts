@@ -7,6 +7,14 @@ export interface BackgroundInfo {
   icon: string
   initialStats: Partial<PMStats>
   effects: string[]
+  /** 法案表决初始票数加成（基础票数 × 此系数的附加量，0.1 = +10%） */
+  billVoteBonus?: number
+  /** 密室"威胁"行动成功率加成（hardliner 特质用） */
+  threatenBonus?: number
+  /** 密室"游说"行动成功率加成 */
+  persuadeBonus?: number
+  /** 密室"利益勾兑"行动成功率加成（union_representative 用） */
+  bribeBonus?: number
 }
 
 export interface TraitInfo {
@@ -16,6 +24,14 @@ export interface TraitInfo {
   icon: string
   initialStats: Partial<PMStats>
   effects: string[]
+  /** 法案表决初始票数加成 */
+  billVoteBonus?: number
+  /** 密室"威胁"行动成功率加成 */
+  threatenBonus?: number
+  /** 密室"游说"行动成功率加成 */
+  persuadeBonus?: number
+  /** 密室"利益勾兑"行动成功率加成 */
+  bribeBonus?: number
 }
 
 export const BACKGROUNDS: BackgroundInfo[] = [
@@ -35,6 +51,7 @@ export const BACKGROUNDS: BackgroundInfo[] = [
       '初始政治资本 +80',
       '辩论技巧 +75',
     ],
+    billVoteBonus: 0.1,
   },
   {
     id: 'union_representative',
@@ -52,6 +69,7 @@ export const BACKGROUNDS: BackgroundInfo[] = [
       '企业界好感度 -10',
       '初始民意 +65',
     ],
+    bribeBonus: 0.1,
   },
   {
     id: 'political_dynasty',
@@ -69,6 +87,7 @@ export const BACKGROUNDS: BackgroundInfo[] = [
       '初始政治资本 +90',
       '党内威望 +85',
     ],
+    billVoteBonus: 0.05,
   },
 ]
 
@@ -87,6 +106,7 @@ export const TRAITS: TraitInfo[] = [
       '风险指数 -10',
       '强硬选项成功率 +15%',
     ],
+    threatenBonus: 0.15,
   },
   {
     id: 'coordinator',
@@ -102,6 +122,7 @@ export const TRAITS: TraitInfo[] = [
       '党内威望 +5',
       '妥协选项成功率 +15%',
     ],
+    bribeBonus: 0.15,
   },
   {
     id: 'pragmatist',
@@ -117,6 +138,7 @@ export const TRAITS: TraitInfo[] = [
       '风险指数 -5',
       '务实选项成功率 +15%',
     ],
+    persuadeBonus: 0.1,
   },
   {
     id: 'idealist',
@@ -132,6 +154,7 @@ export const TRAITS: TraitInfo[] = [
       '风险指数 +5',
       '理想选项成功率 +15%',
     ],
+    persuadeBonus: 0.1,
   },
 ]
 
