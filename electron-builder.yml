@@ -3,6 +3,8 @@ productName: 宰执春秋
 directories:
   output: build-out-v2
   buildResources: public
+# 不发布到 GitHub 等 release 服务，仅生成本地安装包
+publish: none
 files:
   - dist/**/*
   - dist-electron/**/*
