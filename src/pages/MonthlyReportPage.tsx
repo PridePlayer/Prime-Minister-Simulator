@@ -39,7 +39,24 @@ interface MonthlyReportPageProps {
 
 export default function MonthlyReportPage({ asModal = false, onClose }: MonthlyReportPageProps) {
   const monthlyAttribution = useGameStore((s) => s.monthlyAttribution) ?? []
+  const curTurn = useGameStore((s) => s.turn)
+  const curMonth = useGameStore((s) => s.month)
+  const curYear = useGameStore((s) => s.year)
   const [selectedTurn, setSelectedTurn] = useState<number | null>(null)
+
+  // 由 turn 反推该报告对应的"刚结算完的月份"标签。
+  // 当前状态 turn=curTurn 对应当前正在玩的月份 curMonth/curYear；
+  // 报告 turn=T_r 是在"进入 turn T_r 那次月结算"时生成的，对应的是上一个月（刚结束的那个月）。
+  // 因此 report 月 = curMonth - (curTurn - T_r) - 1（按绝对月计算，自动处理跨年）。
+  const labelForTurn = useMemo(() => {
+    const curAbs = curYear * 12 + curMonth // 1 月 = Y*12+1
+    return (turn: number) => {
+      const abs = curAbs - (curTurn - turn) - 1
+      const y = Math.floor((abs - 1) / 12)
+      const m = ((abs - 1) % 12) + 1
+      return `${y}年${m}月`
+    }
+  }, [curTurn, curMonth, curYear])
 
   // 默认显示最近一个月
   const reports = useMemo(() => {
@@ -84,7 +101,7 @@ export default function MonthlyReportPage({ asModal = false, onClose }: MonthlyR
             📊 本月归因报告
           </h2>
           <p className="font-serif text-xs text-parchment-200/50 mt-0.5">
-            {current.monthLabel} · 共 {current.entries.length} 条变化来源
+            {labelForTurn(current.turn)} · 共 {current.entries.length} 条变化来源
           </p>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -98,7 +115,7 @@ export default function MonthlyReportPage({ asModal = false, onClose }: MonthlyR
                   : 'bg-parchment-200/10 text-parchment-200/60 hover:bg-parchment-200/20'
               }`}
             >
-              {r.monthLabel}
+              {labelForTurn(r.turn)}
             </button>
           ))}
         </div>

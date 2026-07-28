@@ -593,7 +593,10 @@ export default function DashboardPage() {
         </AnimatePresence>
       </div>
 
-      {/* ============ 4. 三栏：今日要务 / 内阁快览 / 媒体摘要（加宽） ============ */}
+      {/* ============ 4. 历史曲线面板（紧随指标之后，便于对照走势） ============ */}
+      <HistoryChartsPanel />
+
+      {/* ============ 5. 三栏：今日要务 / 内阁快览 / 媒体摘要（加宽） ============ */}
       <div className="grid grid-cols-12 gap-4">
         {/* 左：今日要务（总理行动）— 占 5 列 */}
         <div className="col-span-12 lg:col-span-5 [&>div]:h-full">
@@ -759,9 +762,6 @@ export default function DashboardPage() {
           <NPCChatter />
         </div>
       </div>
-
-      {/* ============ 6. 底部：历史曲线面板（v1.5 新增，可折叠） ============ */}
-      <HistoryChartsPanel />
     </div>
   )
 }

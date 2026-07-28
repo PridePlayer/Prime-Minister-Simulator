@@ -118,6 +118,28 @@ body {
   overflow: hidden;
 }
 
+/* === 全局禁止选中文本与复制（避免蓝色高亮破坏沉浸感） ===
+ * 输入框 / 文本域保留选中能力以便编辑
+ * -webkit-touch-callout 屏蔽 iOS 长按菜单
+ * -webkit-tap-highlight-color 屏蔽移动端点击蓝框
+ */
+* {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+input,
+textarea,
+[contenteditable="true"] {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
 /* 滚动条 */
 ::-webkit-scrollbar {
   width: 6px;

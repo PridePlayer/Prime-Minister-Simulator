@@ -1295,11 +1295,17 @@ export function advanceMonth(state: GameState): GameState {
         effects: simEffects,
       })
     }
+    // 归因报告针对的是"刚结算完的上一个月"。
+    // 注意：advanceDay 在调用 advanceMonth 前已将 state.month 推进到新月，
+    // 而 advanceMonth 内部又 +1（next.month），直接用 next.month 会错位两个月。
+    // 因此用 state.month（advanceDay 推进后的新月）回推上一个月作为标签。
+    const settledMonth = state.month === 1 ? 12 : state.month - 1
+    const settledYear = state.month === 1 ? state.year - 1 : state.year
     next.monthlyAttribution = [
       ...(state.monthlyAttribution ?? []).slice(-11),
       {
         turn: next.turn,
-        monthLabel: `${next.year}年${next.month}月`,
+        monthLabel: `${settledYear}年${settledMonth}月`,
         entries,
       },
     ]
